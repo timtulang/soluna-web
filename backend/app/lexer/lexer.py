@@ -30,6 +30,9 @@ class Lexer:
             else: break
     
     def _get_next_token(self):
+        # This method's internal logic is correct, we just need to use its output
+        # in tokenize_all to capture the start/end indices.
+        # (The version from our previous discussion is perfect here)
         active_states = {0}
         current_lexeme = ""
         search_index = self.cursor

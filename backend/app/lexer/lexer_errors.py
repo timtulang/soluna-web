@@ -6,7 +6,7 @@ from .td import STATES
 UNFINISHED_FLUX_STATES = {240}
 UNCLOSED_STRING_STATES = {304, 308}
 UNCLOSED_CHAR_STATES = {298, 302}
-UNCLOSED_COMMENT_STATES = {314, 315, 316}
+UNCLOSED_COMMENT_STATES = {314, 315}
 
 
 def check_for_dead_end_error(last_good_active_states, current_lexeme, start_metadata):

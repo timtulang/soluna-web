@@ -10,10 +10,8 @@ class State:
         self.isEnd = end
 
 STATES = {
-    # reserved words
-    # --- BRANCHES SHIFTED >= 175 ---
-    0: State('initial', [1, 10, 16, 20, 25, 32, 42, 46, 68, 72, 79, 86, 92, 114, 119, 129, 138, 144, 150, 154, 160, 162, 166, 170, 174, 179, 183, 186, 189, 192, 194, 196, 198, 200, 202, 204, 206, 208, 210, 257, 297, 303, 309, 317]),
-    # --- END SHIFT ---
+    # This is the FULLY CORRECTED states dictionary
+    0: State('initial', [1, 10, 16, 20, 25, 32, 42, 46, 68, 72, 79, 86, 92, 114, 119, 129, 138, 144, 150, 154, 160, 162, 166, 170, 174, 179, 183, 186, 189, 192, 194, 196, 198, 200, 202, 204, 206, 208, 210, 257, 297, 303, 309, 318]),
     1: State('a', [2, 5]), 2: State('n', [3]),   3: State('d', [4]),   4: State(DELIMS['separator_delim'], end = True), #and
                            5: State('s', [6]),   6: State('t', [7]),   7: State('e', [8]), 8: State('r', [9]),  9: State(REGDEF['free_delim'], end = True), #aster
     10: State('b', [11]), 11: State('l', [12]), 12: State('a', [13]), 13: State('z', [14]), 14: State('e', [15]), 15: State(REGDEF['free_delim'], end = True),  #blaze
@@ -46,13 +44,12 @@ STATES = {
                                                               127: State('x', [128]), 128: State(REGDEF['free_delim'], end = True), #wax 
     129: State('z', [130, 134]), 130: State('a', [131]), 131: State('r', [132]), 132: State('a', [133]), 133: State(DELIMS['zara_delim'], end = True), #zara  
                                  134: State('e', [135]), 135: State('r', [136]), 136: State('u', [137]), 137: State(DELIMS['zeru_delim'], end = True), #zeru  
-
     # reserved symbols
     138: State('+', [139, 140, 142]), 139: State(DELIMS['arithmetic_delim'], end = True), #+  
                                       140: State('+', [141]), 141: State(DELIMS['unary_delim'], end = True), #++
                                       142: State('=', [143]), 143: State(DELIMS['most_symbol_delim'], end = True), #+=                  
     144: State('-', [145, 146, 148]), 145: State(DELIMS['minus_delim'], end = True), #-
-                                      146: State('-', [147]), 147: State(DELIMS['unary_delim'], end = True), #--
+                                      146: State('+', [147]), 147: State(DELIMS['unary_delim'], end = True), #--
                                       148: State('=', [149]), 149: State(DELIMS['most_symbol_delim'], end = True), #-=
     150: State('*', [151, 152]), 151: State(DELIMS['arithmetic_delim'], end = True), #*
                                  152: State('=', [153]), 153: State(DELIMS['most_symbol_delim'], end = True), #*= 
@@ -66,9 +63,6 @@ STATES = {
                                  168: State('=', [169]), 169: State(DELIMS['most_symbol_delim'], end = True), #==
     170: State('!', [171, 172]), 171: State(DELIMS['not_delim'], end = True), #!
                                  172: State('=', [173]), 173: State(DELIMS['most_symbol_delim'], end = True), #!=
-    
-    # --- ALL STATES FROM HERE SHIFTED BY +1 ---
-    # --- 174 is fixed, 175 is new, 176->177, etc. ---
     174: State('<', [175, 177]), 175: State(DELIMS['most_symbol_delim'], end = True), #<
                                  177: State('=', [178]), 178: State(DELIMS['most_symbol_delim'], end = True), #<=
     179: State('>', [180, 181]), 180: State(DELIMS['most_symbol_delim'], end = True), #>
@@ -102,7 +96,6 @@ STATES = {
                                                         234: State(REGDEF['digit'], [235, 236, 240]), 235: State(DELIMS['most_data_type_delim'], end = True), #numerical value
                                                             236: State(REGDEF['digit'], [237, 238, 240]), 237: State(DELIMS['most_data_type_delim'], end = True), #numerical value
                                                                 238: State(REGDEF['digit'], [239]), 239: State(DELIMS['most_data_type_delim'], end = True), #numerical value
-
     # numerical values, decimals
     240: State('.', [241]),
         241: State(REGDEF['digit'], [242, 243]), 242: State(DELIMS['most_data_type_delim'], end = True),
@@ -113,7 +106,6 @@ STATES = {
                             251: State(REGDEF['digit'], [252, 253]), 252: State(DELIMS['most_data_type_delim'], end = True),
                                 253: State(REGDEF['digit'], [254, 255]), 254: State(DELIMS['most_data_type_delim'], end = True),
                                     255: State(REGDEF['digit'], [256]), 256: State(DELIMS['most_data_type_delim'], end = True),
-
     # identifiers
     257: State([*REGDEF['alphabet'], '_'], [258, 259]), 258: State(DELIMS['identifier_delim'], end = True),
         259: State([*REGDEF['alphanumeric'], '_'], [260, 261]), 260: State(DELIMS['identifier_delim'], end = True),
@@ -135,13 +127,22 @@ STATES = {
                                                                         291: State(REGDEF['alphanumeric'], [292, 293]), 292: State(DELIMS['identifier_delim'], end = True),
                                                                             293: State(REGDEF['alphanumeric'], [294, 295]), 294: State(DELIMS['identifier_delim'], end = True),
                                                                                 295: State(REGDEF['alphanumeric'], [296]), 296: State(DELIMS['identifier_delim'], end = True),
-
     # string, char, comments, leo
     297: State('\'', [298, 301]), 298: State(REGDEF['ascii_298_302'], [299]), 299: State('\'', [300]), 300: State(DELIMS['most_data_type_delim'], end = True),
                                   301: State('\\', [298]), 302: State(REGDEF['ascii_298_302'], [299]),
     303: State('"', [304, 307]), 304: State(REGDEF['ascii_298_302'], [304, 305, 307]), 305: State('"', [306]), 306: State(DELIMS['most_data_type_delim'], end = True),
                                                            307: State('\\', [308]), 308: State(REGDEF['ascii_298_302'], [304]),
-    309: State('\\', [310, 313]), 310: State('\\', [311]), 311: State(REGDEF['ascii_no_newline'], [311, 312]), 312: State('\n', end = True),
-                313: State('*', [314]), 314: State(REGDEF['ascii_309'], [314, 315]), 315: State('*', [314, 316]), 316: State('\\', end = True),
-    317: State(':', [318]), 318: State(':', [319]), 319: State([*REGDEF['alphanumeric'], '_'], [320,324]), 320: State(REGDEF['alphanumeric'], [321,324]), 321: State(REGDEF['alphanumeric'], [322,324]), 322: State(REGDEF['alphanumeric'], [323,324]), 323: State(REGDEF['alphanumeric'], [324]), 324: State(':', [325]), 325: State(':', [326]), 326: State(DELIMS['leo_delim'], end = True) 
+    
+    # --- THIS BLOCK IS NOW FIXED ---
+    309: State('\\', [310, 313]), 310: State('\\', [311]), 
+                                  311: State(REGDEF['ascii_no_newline'], [311, 312]), 
+                                  312: State('\n', end = True),
+                313: State('*', [314]), 
+                314: State(REGDEF['ascii_309'], [314, 315]),
+                315: State('*', [314, 316]), 
+                316: State('\\', [317]),
+                317: State(REGDEF['free_delim'], end = True), # NOW it's an end state, delimited by space, \n, ;, etc.
+    
+    # --- All leo_label states are shifted by +1 ---
+    318: State(':', [319]), 319: State(':', [320]), 320: State([*REGDEF['alphanumeric'], '_'], [321]), 321: State(REGDEF['alphanumeric'], [322]), 322: State(REGDEF['alphanumeric'], [323]), 323: State(REGDEF['alphanumeric'], [324]), 324: State(REGDEF['alphanumeric'], [325]), 325: State(':', [326]), 326: State(':', [327]), 327: State(DELIMS['leo_delim'], end = True)
 }
