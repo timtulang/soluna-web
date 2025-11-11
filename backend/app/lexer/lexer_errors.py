@@ -1,13 +1,12 @@
-# backend/app/lexer_errors.py (Modified)
+
+
 import sys
 from .td import STATES
 
-# --- State Definitions (Magic Numbers are up-to-date) ---
 UNFINISHED_FLUX_STATES = {240}
 UNCLOSED_STRING_STATES = {304, 308}
 UNCLOSED_CHAR_STATES = {298, 302}
 UNCLOSED_COMMENT_STATES = {314, 315}
-
 
 def check_for_dead_end_error(last_good_active_states, current_lexeme, start_metadata):
     line, col, _, _ = start_metadata
@@ -15,12 +14,12 @@ def check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta
         return ('UNFINISHED_FLUX', (line, col), current_lexeme)
     return None
 
-
 def check_for_total_failure_error(
     last_good_active_states,
     char_that_killed_it,
     current_lexeme,
-    start_metadata
+    start_metadata,
+    cursor_char 
 ):
     line, col, _, _ = start_metadata
     if char_that_killed_it != '\0' and last_good_active_states:
@@ -39,11 +38,10 @@ def check_for_total_failure_error(
         if not last_good_active_states.isdisjoint(UNCLOSED_COMMENT_STATES):
             return ('UNCLOSED_COMMENT', (line, col), current_lexeme)
 
-    return ('UNRECOGNIZED_CHAR', (line, col), char_that_killed_it)
-
+    return ('UNRECOGNIZED_CHAR', (line, col), cursor_char)
 
 def format_error(error_tuple):
-    """ Returns a dictionary representing the error instead of printing. """
+    """ Returns a dictionary representing the error. """
     error_type, (line, col), data = error_tuple
     
     error_info = {"type": error_type, "line": line, "col": col}
@@ -52,7 +50,7 @@ def format_error(error_tuple):
         error_info["message"] = f"Unfinished float literal '{data}'."
     elif error_type == 'INVALID_DELIMITER':
         lexeme, delim = data
-        error_info["col"] = col + len(lexeme) # Adjust column to point at the delimiter
+        error_info["col"] = col + len(lexeme)
         error_info["message"] = f"Invalid delimiter '{delim}' after token '{lexeme}'."
     elif error_type in ['UNCLOSED_STRING', 'UNCLOSED_COMMENT']:
         error_info["message"] = f"Unclosed {error_type.split('_')[1].lower()}."

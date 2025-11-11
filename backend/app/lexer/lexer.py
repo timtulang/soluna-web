@@ -1,8 +1,9 @@
-# backend/app/lexer.py (Modified)
+# backend/app/lexer.py (Updated)
+
 import sys
 from .td import STATES
 from .token import tokenize
-from . import lexer_errors
+from . import lexer_errors # Now imports the whole module
 
 class Lexer:
     WHITESPACE = {' ', '\n', '\t', '\r'}
@@ -30,9 +31,8 @@ class Lexer:
             else: break
     
     def _get_next_token(self):
-        # This method's internal logic is correct, we just need to use its output
-        # in tokenize_all to capture the start/end indices.
-        # (The version from our previous discussion is perfect here)
+        # ... (This entire function's logic remains the same) ...
+        # (It will still return (None, error_tuple) on failure)
         active_states = {0}
         current_lexeme = ""
         search_index = self.cursor
@@ -63,7 +63,6 @@ class Lexer:
             current_lexeme += lookahead_char
             search_index += 1
         
-        # --- Error Detection Logic ---
         start_meta = (self.line, self.col, self.cursor, last_accepted_end_index)
         if last_accepted_lexeme is not None and len(current_lexeme) > len(last_accepted_lexeme):
             error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
@@ -72,16 +71,26 @@ class Lexer:
             lexeme = last_accepted_lexeme
             new_cursor_pos = last_accepted_end_index
             return lexeme, new_cursor_pos
-        error = lexer_errors.check_for_total_failure_error(last_good_active_states, char_that_killed_it, current_lexeme, start_meta)
+        
+        # --- Small change: Pass the actual failing char ---
+        failed_char = self._get_char_at(self.cursor)
+        error = lexer_errors.check_for_total_failure_error(
+            last_good_active_states,
+            char_that_killed_it,
+            current_lexeme,
+            start_meta,
+            failed_char # Pass the character at the cursor
+        )
         return None, error
 
     def tokenize_all(self):
         """
         Runs the lexer over the entire source code.
-        Returns a tuple: (list_of_tokens, error_dictionary_or_None)
+        Returns a tuple: (list_of_tokens, list_of_errors)
         """
         lexemes = []
         metadata = []
+        errors = [] # <-- NEW: Store errors here
         
         while self.cursor < len(self.source_code):
             self._skip_ignorable_whitespace()
@@ -93,9 +102,23 @@ class Lexer:
             lexeme, result = self._get_next_token()
             
             if lexeme is None:
-                # Error occurred
                 error_tuple = result
-                return [], lexer_errors.format_error(error_tuple)
+                # Format and store the error
+                errors.append(lexer_errors.format_error(error_tuple))
+                
+                # "Panic" and recover: advance cursor by 1
+                # (Handle multi-byte chars and newlines if necessary,
+                # but for this project, simple advance is fine)
+                char_at_cursor = self._get_char_at(self.cursor)
+                if char_at_cursor == '\n':
+                    self.line += 1
+                    self.col = 1
+                else:
+                    self.col += 1
+                self.cursor += 1
+                
+                continue # Continue to the next loop iteration
+                # --- END NEW ERROR LOGIC ---
             
             # Success
             end_cursor = result
@@ -108,6 +131,5 @@ class Lexer:
                 if char == '\n': self.line += 1; self.col = 1
                 else: self.col += 1
 
-        # Post-process into final tokens
         tokens = tokenize(lexemes, metadata)
-        return tokens, None
+        return tokens, errors # Return both
