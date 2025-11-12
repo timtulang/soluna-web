@@ -176,24 +176,6 @@ const App: React.FC = () => {
 
           {/* Right column (unchanged) */}
           <div className="space-y-6">
-            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-zinc-800/50">
-                <h2 className="font-semibold text-zinc-200">Syntax Preview</h2>
-              </div>
-              <div className="p-6 font-mono text-sm min-h-[160px] bg-black/30">
-                {tokens.length === 0 && errors.length === 0 ? (
-                  <span className="text-zinc-600 italic">Your syntax-highlighted code will appear here...</span>
-                ) : (
-                  <div className="whitespace-pre-wrap break-words">
-                    {tokens.map((t, i) => (
-                      <span key={i} style={{color: getColor(t.type)}}>
-                        {t.value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
             {/* Tokens */}
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{maxHeight: '600px'}}>
               <div className="px-6 py-4 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0">
@@ -225,6 +207,24 @@ const App: React.FC = () => {
                           </span>
                         </div>
                       </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-zinc-800/50">
+                <h2 className="font-semibold text-zinc-200">Syntax Preview</h2>
+              </div>
+              <div className="p-6 font-mono text-sm min-h-[160px] bg-black/30">
+                {tokens.length === 0 && errors.length === 0 ? (
+                  <span className="text-zinc-600 italic">Your syntax-highlighted code will appear here...</span>
+                ) : (
+                  <div className="whitespace-pre-wrap break-words">
+                    {tokens.map((t, i) => (
+                      <span key={i} style={{color: getColor(t.type)}}>
+                        {t.value}
+                      </span>
                     ))}
                   </div>
                 )}
