@@ -1,7 +1,5 @@
-// frontend/src/App.tsx (Updated)
-
 import React, { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, CSSProperties } from "react";
+import type { ChangeEvent } from "react";
 
 // --- Types ---
 type Token = {
@@ -11,7 +9,6 @@ type Token = {
   end: number;
 };
 
-// UPDATED: Error is now an array
 type LexerError = {
   type: string;
   message: string;
@@ -19,10 +16,9 @@ type LexerError = {
   col: number;
 };
 
-// UPDATED: WebSocket message
 type WsMessage = {
   tokens?: Token[];
-  errors?: LexerError[]; // Now an array
+  errors?: LexerError[];
 };
 
 // ... (tokenColors and getColor function are unchanged) ...
@@ -41,7 +37,6 @@ const App: React.FC = () => {
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
   const [tokens, setTokens] = useState<Token[]>([]);
   const [raw, setRaw] = useState<string>("");
-  // --- UPDATED: Error state is now an array ---
   const [errors, setErrors] = useState<LexerError[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -61,14 +56,12 @@ const App: React.FC = () => {
         try {
           const data: WsMessage = JSON.parse(ev.data);
           
-          // --- UPDATED: Set both tokens and errors ---
           if (data.tokens) {
             setTokens(data.tokens);
           }
           if (data.errors) {
             setErrors(data.errors);
           }
-          // --- END UPDATE ---
 
         } catch (e) {
           console.error("Invalid message from server", e);
@@ -92,7 +85,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // ... (sendCodeDebounced and onEditorChange are unchanged) ...
   function sendCodeDebounced(code: string) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (sendTimer.current) clearTimeout(sendTimer.current);
@@ -174,7 +166,7 @@ const App: React.FC = () => {
               )}
           </div>
 
-          {/* Right column (unchanged) */}
+          {/* Right column */}
           <div className="space-y-6">
             {/* Tokens */}
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{maxHeight: '600px'}}>
@@ -232,7 +224,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-        {/* Footer (unchanged) */}
+        {/* Footer */}
         <footer className="mt-8 text-center">
           <div className="inline-flex items-center gap-3 px-6 py-3 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-full text-sm">
             <span className="text-zinc-400">WebSocket:</span>
