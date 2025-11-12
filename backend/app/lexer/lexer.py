@@ -1,135 +1,250 @@
-# backend/app/lexer.py (Updated)
+#
+# lexer.py
+#
+# This is the main lexer engine. It contains the Lexer class that
+# I designed to run the Finite Automaton (FA) defined in `td.py`.
+#
+# Its job is to:
+# 1. Take the source code as input.
+# 2. Skip whitespace.
+# 3. Use the FA (`_get_next_token`) to find the longest valid raw lexeme.
+# 4. Handle errors ("panic and recover") using `lexer_errors.py`.
+# 5. Collect all valid lexemes and their metadata (line, col).
+# 6. Pass the list of raw lexemes to `token.py` for final classification.
+#
 
 import sys
-from .td import STATES
-from .token import tokenize
-from . import lexer_errors # Now imports the whole module
+from .td import STATES             # My FA state machine
+from .token import tokenize        # The second-pass classifier
+from . import lexer_errors        # My error handling module
 
 class Lexer:
+    # Defining ignorable whitespace characters
     WHITESPACE = {' ', '\n', '\t', '\r'}
     
     def __init__(self, source_code: str):
+        """
+        Initializes the lexer.
+        I set up the internal state: the code, and the pointers
+        for our current position (cursor, line, col).
+        """
         self.source_code = source_code
         self.cursor = 0
         self.line = 1
         self.col = 1
 
-    # ... (_get_char_at, _check_char_in_state_chars, _skip_ignorable_whitespace remain the same) ...
+    # --- Private Utility Methods ---
+
     def _get_char_at(self, index: int) -> str:
-        if index < len(self.source_code): return self.source_code[index]
-        return '\0'
+        """
+        A simple helper to safely get a character from the source code.
+        If the index is out of bounds, I return the null character ('\0'),
+        which I use to signal the End-of-File (EOF).
+        """
+        if index < len(self.source_code): 
+            return self.source_code[index]
+        return '\0' # EOF marker
+
     def _check_char_in_state_chars(self, char: str, state_chars) -> bool:
-        try: return char in state_chars
-        except: return False
+        """
+        A helper to check if a character matches a state's acceptance criteria.
+        This handles the fact that `state_chars` is a list (from my State class).
+        The try/except is a safety net for any weird character comparisons.
+        """
+        try: 
+            return char in state_chars
+        except: 
+            return False
+
     def _skip_ignorable_whitespace(self):
+        """
+        I use this method to advance the main `self.cursor` past any
+        whitespace. It also correctly increments `self.line` and resets
+        `self.col` when it encounters a newline.
+        """
         while self.cursor < len(self.source_code):
             char = self.source_code[self.cursor]
             if char in self.WHITESPACE:
-                if char == '\n': self.line += 1; self.col = 1
-                else: self.col += 1
+                if char == '\n': 
+                    self.line += 1
+                    self.col = 1
+                else: 
+                    self.col += 1
                 self.cursor += 1
-            else: break
+            else: 
+                break
     
     def _get_next_token(self):
-        # ... (This entire function's logic remains the same) ...
-        # (It will still return (None, error_tuple) on failure)
+        """
+        This is the core FA simulation loop.
+        It attempts to find the *longest* valid lexeme starting from
+        the current `self.cursor`.
+        
+        Returns:
+            (str, int): (lexeme, new_cursor_pos) on success.
+            (None, tuple): (None, error_tuple) on failure.
+        """
+        # Start the FA simulation from state 0
         active_states = {0}
         current_lexeme = ""
+        
+        # This search_index is a *lookahead* cursor.
+        # The main `self.cursor` doesn't move yet.
         search_index = self.cursor
+        
+        # These variables track the *last valid token* we've found.
+        # This is how I implement "longest match".
+        # e.g., for "letx", it will find "let" as the last_accepted_lexeme.
         last_accepted_lexeme = None
         last_accepted_end_index = self.cursor
         last_good_active_states = {0}
-        char_that_killed_it = '\0'
+        char_that_killed_it = '\0' # The char that stopped the simulation
+        
         while active_states:
+            # Store the current state before advancing
             last_good_active_states = active_states
+            
+            # Look at the *next* character
             lookahead_char = self._get_char_at(search_index)
             char_that_killed_it = lookahead_char
+            
             next_active_states = set()
+
+            # --- Delimiter Check ---
+            # This is crucial. I check if the `lookahead_char` is a
+            # valid *delimiter* for any *end state* we're currently in.
             for state_id in active_states:
                 for next_state_id in STATES[state_id].branches:
                     next_state = STATES[next_state_id]
                     if next_state.isEnd and self._check_char_in_state_chars(lookahead_char, next_state.chars):
+                        # If it is, this is a potential token.
+                        # I record it *only if* it's longer than the
+                        # one I've already found.
                         if len(current_lexeme) >= len(last_accepted_lexeme or ""):
                             last_accepted_lexeme = current_lexeme
                             last_accepted_end_index = search_index
-            if lookahead_char == '\0': break
+            
+            # Stop if we hit the end of the file
+            if lookahead_char == '\0': 
+                break
+            
+            # --- State Transition ---
+            # Now, I find all *non-end* states that can transition
+            # on the current `lookahead_char`.
             for state_id in active_states:
                 for next_state_id in STATES[state_id].branches:
                     next_state = STATES[next_state_id]
                     if not next_state.isEnd and self._check_char_in_state_chars(lookahead_char, next_state.chars):
                         next_active_states.add(next_state_id)
-            if not next_active_states: break
+            
+            # If there are no next states, the simulation is over.
+            if not next_active_states: 
+                break
+                
+            # Advance the simulation
             active_states = next_active_states
             current_lexeme += lookahead_char
             search_index += 1
         
+        # --- Post-Loop Analysis ---
+        # The loop is over. Now I decide what happened.
+        
         start_meta = (self.line, self.col, self.cursor, last_accepted_end_index)
+
+        # Case 1: The loop broke, but we *never* found a valid end state.
+        # This checks for "dead ends" like "123."
         if last_accepted_lexeme is not None and len(current_lexeme) > len(last_accepted_lexeme):
             error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
-            if error: return None, error
+            if error: 
+                return None, error # Return the "UNFINISHED_FLUX" error
+
+        # Case 2: Success. We found at least one valid token.
+        # The `last_accepted_lexeme` holds the longest one.
         if last_accepted_lexeme is not None:
             lexeme = last_accepted_lexeme
             new_cursor_pos = last_accepted_end_index
             return lexeme, new_cursor_pos
         
-        # --- Small change: Pass the actual failing char ---
+        # Case 3: Total failure. No valid state transitions *at all*
+        # from the start, or an invalid delimiter.
         failed_char = self._get_char_at(self.cursor)
         error = lexer_errors.check_for_total_failure_error(
             last_good_active_states,
             char_that_killed_it,
             current_lexeme,
             start_meta,
-            failed_char # Pass the character at the cursor
+            failed_char # Pass the char that *caused* the error
         )
         return None, error
 
     def tokenize_all(self):
         """
-        Runs the lexer over the entire source code.
-        Returns a tuple: (list_of_tokens, list_of_errors)
-        """
-        lexemes = []
-        metadata = []
-        errors = [] # <-- NEW: Store errors here
+        This is the main public method I designed to run the lexer
+        over the entire source code.
         
+        It implements "panic and recover" error handling: if it
+        finds an error, it logs it, advances the cursor by one,
+        and tries to lex again.
+        
+        Returns:
+            A tuple: (list_of_tokens, list_of_errors)
+        """
+        lexemes = []  # Stores the raw lexeme strings
+        metadata = [] # Stores their {line, col, start, end}
+        errors = []   # Stores any formatted error dicts
+        
+        # Loop until we've consumed the entire file
         while self.cursor < len(self.source_code):
+            # 1. Skip all ignorable whitespace
             self._skip_ignorable_whitespace()
-            if self.cursor >= len(self.source_code): break
+            if self.cursor >= len(self.source_code): 
+                break # Re-check for EOF after skipping
                 
+            # 2. Store our starting position *before* trying to get a token
             start_cursor = self.cursor
             start_line, start_col = self.line, self.col
             
+            # 3. Try to get the next token
             lexeme, result = self._get_next_token()
             
+            # 4. Handle Failure ("Panic and Recover")
             if lexeme is None:
-                error_tuple = result
+                error_tuple = result # This is the error from _get_next_token
+                
                 # Format and store the error
                 errors.append(lexer_errors.format_error(error_tuple))
                 
-                # "Panic" and recover: advance cursor by 1
-                # (Handle multi-byte chars and newlines if necessary,
-                # but for this project, simple advance is fine)
+                # This is the "panic" step: I advance the cursor by 1
+                # to get past the bad character, then `continue`
+                # to try lexing again from the *next* character.
                 char_at_cursor = self._get_char_at(self.cursor)
                 if char_at_cursor == '\n':
                     self.line += 1
                     self.col = 1
                 else:
                     self.col += 1
-                self.cursor += 1
+                self.cursor += 1 # Advance!
                 
-                continue # Continue to the next loop iteration
-                # --- END NEW ERROR LOGIC ---
+                continue # Go to the next loop iteration
             
-            # Success
+            # 5. Handle Success
             end_cursor = result
             lexemes.append(lexeme)
             metadata.append({'line': start_line, 'col': start_col, 'start': start_cursor, 'end': end_cursor})
             
-            # Advance main cursor and line/col counts
+            # 6. Advance the main cursor and line/col counts
+            # I set the cursor to the *end* of the lexeme
             self.cursor = end_cursor
+            
+            # Then, I update line/col based on the content of the lexeme
+            # (this is mainly for handling multi-line comments)
             for char in lexeme:
-                if char == '\n': self.line += 1; self.col = 1
-                else: self.col += 1
+                if char == '\n': 
+                    self.line += 1
+                    self.col = 1
+                else: 
+                    self.col += 1
 
+        # 7. After the loop, pass the raw lexemes to Pass 2 for classification
         tokens = tokenize(lexemes, metadata)
-        return tokens, errors # Return both
+        return tokens, errors # Return both tokens and errors
