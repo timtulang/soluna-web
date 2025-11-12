@@ -91,12 +91,12 @@ def tokenize(lexemes: list[str], metadata: list):
             
         # 5. Is it a string literal?
         if lexeme.startswith('"') and lexeme.endswith('"'):
-            token_stream.append((lexeme, 'chika_literal'))
+            token_stream.append((lexeme, 'selene_literal'))
             continue
             
         # 6. Is it a char literal?
         if lexeme.startswith("'") and lexeme.endswith("'"):
-            token_stream.append((lexeme, 'char_literal'))
+            token_stream.append((lexeme, 'blaze_literal'))
             continue
             
         # 7. Is it a number?

@@ -23,7 +23,7 @@ type WsMessage = {
 
 // ... (tokenColors and getColor function are unchanged) ...
 const tokenColors: Record<string, string> = {
-  COMMENT: "#6a9955", KAI_LIT: "#b5cea8", FLUX_LIT: "#b5cea8", ID: "#dcdcaa", CHIKA_LITERAL: "#ce9178", CHAR_LITERAL: "#ce9178", AND: "#c586c0", ASTER: "#c586c0", BLAZE: "#c586c0", COS: "#c586c0", FLUX: "#c586c0", HUBBLE: "#c586c0", IRIS: "#c586c0", IXION: "#c586c0", KAI: "#c586c0", LANI: "#c586c0", LEO: "#c586c0", LET: "#c586c0", LUMEN: "#c586c0", LUMINA: "#c586c0", LUNA: "#c586c0", MOS: "#c586c0", NOT: "#c586c0", NOVA: "#c586c0", OR: "#c586c0", ORBIT: "#c586c0", PHASE: "#c586c0", SAGE: "#c586c0", SELENE: "#c586c0", SOL: "#c586c0", SOLUNA: "#c586c0", STAR: "#c586c0", VOID: "#c586c0", WANE: "#c586c0", WARP: "#c586c0", WAX: "#c586c0", ZARA: "#c586c0", ZERU: "#c586c0", LEO_LABEL: "#4ec9b0", DEFAULT_SYMBOL: "#569cd6", WHITESPACE: "#ffffff", UNKNOWN: "#f44747",
+  COMMENT: "#6a9955", KAI_LIT: "#b5cea8", FLUX_LIT: "#b5cea8", ID: "#dcdcaa", SELENE_LITERAL: "#ce9178", BLAZE_LITERAL: "#ce9178", AND: "#c586c0", ASTER: "#c586c0", BLAZE: "#c586c0", COS: "#c586c0", FLUX: "#c586c0", HUBBLE: "#c586c0", IRIS: "#c586c0", IXION: "#c586c0", KAI: "#c586c0", LANI: "#c586c0", LEO: "#c586c0", LET: "#c586c0", LUMEN: "#c586c0", LUMINA: "#c586c0", LUNA: "#c586c0", MOS: "#c586c0", NOT: "#c586c0", NOVA: "#c586c0", OR: "#c586c0", ORBIT: "#c586c0", PHASE: "#c586c0", SAGE: "#c586c0", SELENE: "#c586c0", SOL: "#c586c0", SOLUNA: "#c586c0", STAR: "#c586c0", VOID: "#c586c0", WANE: "#c586c0", WARP: "#c586c0", WAX: "#c586c0", ZARA: "#c586c0", ZERU: "#c586c0", LEO_LABEL: "#4ec9b0", DEFAULT_SYMBOL: "#569cd6", WHITESPACE: "#ffffff", UNKNOWN: "#f44747",
 };
 const getColor = (type: string): string => {
   if (tokenColors[type]) { return tokenColors[type]; }
