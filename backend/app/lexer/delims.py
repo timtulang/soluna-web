@@ -42,7 +42,7 @@ DELIMS = {
     'control_structure_delim': {*REGDEF['io_delim'], *REGDEF['free_delim']},
 
     # Delimiter for the '!' (not) operator.
-    'not_delim': {'"', '-', '!', '(', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
+    'not_delim': {'"', '-', '!', '(', *REGDEF['alphanumeric']},
 
     # Delimiter for the '-' (minus) operator (to distinguish from '--').
     'minus_delim': {'(', '!', '"', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},

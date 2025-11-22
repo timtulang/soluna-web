@@ -25,6 +25,12 @@ REGDEF = {
     # ASCII for multi-line comments: excludes '*' and null
     'ascii_309': {chr(i) for i in range(128) if chr(i) not in ['*', '\0']},
 
+    # NEW: ASCII for resolving comment ambiguity.
+    # Used when we've just seen a '*'. We accept anything EXCEPT:
+    # 1. '*' (which would keep us in the 'potential end' state)
+    # 2. '\' (which MUST close the comment)
+    'ascii_safe_comment_body': {chr(i) for i in range(128) if chr(i) not in ['*', '\\', '\0']},
+
     # --- Basic Character Sets ---
     'alphabet': {
         'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',

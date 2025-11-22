@@ -133,7 +133,14 @@ class Lexer:
                             last_accepted_states.add(next_state_id) # Add to existing match
             
             # Stop if we hit the end of the file
-            if lookahead_char == '\0': 
+            if lookahead_char == '\0':
+                # NEW FEATURE: Handle Unclosed Comments at EOF
+                # If the file ends but we are inside a multi-line comment state (314, 315),
+                # we accept the current lexeme as valid instead of triggering an error.
+                if not active_states.isdisjoint(lexer_errors.UNCLOSED_COMMENT_STATES):
+                    last_accepted_lexeme = current_lexeme
+                    last_accepted_end_index = search_index
+                    last_accepted_states = {317} # 317 is the normal comment end state
                 break
             
             # --- State Transition ---
@@ -218,13 +225,25 @@ class Lexer:
             # 4. Handle Failure ("Panic and Recover")
             if lexeme is None:
                 error_tuple = result # This is the error from _get_next_token
+                formatted_err = lexer_errors.format_error(error_tuple)
                 
-                # Format and store the error
-                errors.append(lexer_errors.format_error(error_tuple))
-                
-                # Handle INVALID_DELIMITER specially to separate the invalid token from the next error
+                # UPDATE: Capture the range of the error (start, end)
+                # so we can filter these regions out in the output.
+                advance_amount = 0
                 if error_tuple[0] == 'INVALID_DELIMITER':
                     # Data is (lexeme, delim)
+                    bad_lexeme, _ = error_tuple[2]
+                    advance_amount = len(bad_lexeme)
+                else:
+                    advance_amount = 1
+
+                formatted_err['start'] = start_cursor
+                formatted_err['end'] = self.cursor + advance_amount
+                errors.append(formatted_err)
+                
+                # Now actually advance the cursor
+                # Handle INVALID_DELIMITER specially to separate the invalid token from the next error
+                if error_tuple[0] == 'INVALID_DELIMITER':
                     bad_lexeme, _ = error_tuple[2]
                     
                     # Advance by the length of the lexeme (consuming the "valid" part)

@@ -27,7 +27,8 @@ UNCLOSED_STRING_STATES = {304, 308}
 UNCLOSED_CHAR_STATES = {298, 302}
 
 # States 314/315 are inside a multi-line comment.
-UNCLOSED_COMMENT_STATES = {314, 315}
+# NEW: Added 3150 (the safe return state) to this set.
+UNCLOSED_COMMENT_STATES = {314, 315, 3150}
 
 
 def check_for_dead_end_error(last_good_active_states, current_lexeme, start_metadata):

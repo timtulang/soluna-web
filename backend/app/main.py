@@ -11,6 +11,7 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
+import re  # NEW: Imported regex module for splitting newlines
 # This is the main import that connects my server to the lexer system I built.
 from app.lexer.lexer import Lexer 
 
@@ -36,10 +37,8 @@ def run_lexer(code: str):
     runs the lexer, and then transforms the output into a
     JSON-friendly format for the frontend.
     
-    It also intelligently inserts "WHITESPACE" tokens for the gaps
-    between the tokens my lexer finds. This is crucial for
-    reconstructing the *entire* code block on the frontend,
-    including all the original spacing and newlines.
+    It also intelligently inserts "WHITESPACE" and "NEWLINE" tokens 
+    for the gaps between the tokens my lexer finds.
     
     Returns:
         (list, list): A tuple containing the list of final tokens
@@ -51,8 +50,6 @@ def run_lexer(code: str):
     tokens_from_lexer, errors = lexer.tokenize_all()
 
     # 2. Process the lexer's output into a cleaner list of dictionaries.
-    # The output from tokenize_all() is [((value, type), meta), ...],
-    # so I flatten it into [{type, value, start, end, line, col}, ...].
     processed_tokens = []
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
@@ -61,56 +58,107 @@ def run_lexer(code: str):
             "value": value,
             "start": meta['start'],
             "end": meta['end'],
-            "line": meta['line'], # Added line
-            "col": meta['col']    # Added col
+            "line": meta['line'], 
+            "col": meta['col']    
         })
 
-    # 3. Insert WHITESPACE tokens.
-    # My lexer *skips* whitespace, but the frontend needs it.
-    # I iterate through my processed tokens and check for gaps.
-    
+    # 3. Insert WHITESPACE/NEWLINE tokens, skipping errors.
     final_tokens = []
     last_end = 0
     
     # We initialize trackers for line/col to calculate positions for whitespace
     current_line = 1
     current_col = 1
+    
+    # NEW: Helper function to emit valid whitespace/newline tokens
+    def emit_text(text, start_pos):
+        nonlocal current_line, current_col
+        
+        # Split the text by newline characters, keeping the delimiters
+        # r'(\n)' splits "a\nb" into ["a", "\n", "b"]
+        parts = re.split(r'(\n)', text)
+        
+        curr = start_pos
+        for part in parts:
+            if not part: continue
+            
+            # Determine token type
+            t_type = "NEWLINE" if part == '\n' else "WHITESPACE"
+            
+            final_tokens.append({
+                "type": t_type,
+                "value": part,
+                "start": curr,
+                "end": curr + len(part),
+                "line": current_line,
+                "col": current_col
+            })
+            
+            # Update trackers
+            curr += len(part)
+            if part == '\n':
+                current_line += 1
+                current_col = 1
+            else:
+                current_col += len(part)
 
+    # Helper function to process a gap
+    def process_gap(start, end):
+        nonlocal current_line, current_col
+        
+        if start >= end: return
+
+        chunk_start = start
+        
+        # Find errors completely or partially inside this gap
+        relevant_errors = [
+            e for e in errors 
+            if e.get('start', -1) < end and e.get('end', -1) > start
+        ]
+        # Sort by start to handle sequentially
+        relevant_errors.sort(key=lambda x: x['start'])
+        
+        for err in relevant_errors:
+            # The error might start before our chunk_start if overlaps, 
+            # but we only care about the part inside [start, end).
+            err_start = max(err['start'], chunk_start)
+            err_end = min(err['end'], end)
+            
+            # If there is valid text before this error starts, emit it
+            if err_start > chunk_start:
+                # Use the new emit_text helper
+                emit_text(code[chunk_start:err_start], chunk_start)
+
+            # Now process the ERROR text (skip emitting, but update line/col)
+            if err_end > err_start:
+                err_val = code[err_start:err_end]
+                newlines = err_val.count('\n')
+                if newlines > 0:
+                    current_line += newlines
+                    current_col = len(err_val) - err_val.rfind('\n')
+                else:
+                    current_col += len(err_val)
+            
+            chunk_start = max(chunk_start, err_end)
+
+        # Emit any remaining valid text after the last error
+        if chunk_start < end:
+            emit_text(code[chunk_start:end], chunk_start)
+
+    # Iterate through tokens and fill gaps
     for token in processed_tokens:
         start_index = token["start"]
 
         # Check if there's a gap between the last token and this one
         if start_index > last_end:
-            whitespace_value = code[last_end:start_index]
-            
-            # Add the whitespace token with calculated line/col
-            final_tokens.append({
-                "type": "WHITESPACE",
-                "value": whitespace_value,
-                "start": last_end,
-                "end": start_index,
-                "line": current_line,
-                "col": current_col
-            })
-            
-            # Advance our position trackers past the whitespace
-            newlines = whitespace_value.count('\n')
-            if newlines > 0:
-                current_line += newlines
-                current_col = len(whitespace_value) - whitespace_value.rfind('\n')
-            else:
-                current_col += len(whitespace_value)
+            process_gap(last_end, start_index)
 
         # Add the current (non-whitespace) token
         final_tokens.append(token)
         
-        # Sync our trackers to the token's actual end position 
-        # so the NEXT whitespace starts at the right place.
-        # We start at the token's 'line' and 'col' (authoritative source)
+        # Sync our trackers to the token's end
         current_line = token['line']
         current_col = token['col']
-        
-        # Add the length of the token to find where it ends
         token_val = token['value']
         newlines = token_val.count('\n')
         if newlines > 0:
@@ -123,15 +171,7 @@ def run_lexer(code: str):
         
     # 4. Add any trailing whitespace after the very last token.
     if last_end < len(code):
-        whitespace_value = code[last_end:]
-        final_tokens.append({
-            "type": "WHITESPACE",
-            "value": whitespace_value,
-            "start": last_end,
-            "end": len(code),
-            "line": current_line,
-            "col": current_col
-        })
+        process_gap(last_end, len(code))
 
     # 5. Return both the final list of tokens (with whitespace) and errors.
     return final_tokens, errors

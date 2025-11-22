@@ -12,11 +12,12 @@
 # I define these as sets for fast O(1) lookups.
 # This is much faster than checking against a list.
 
+# Added 'zeta' to RESERVED_WORDS
 RESERVED_WORDS = {
     'and', 'aster', 'blaze', 'cos', 'flux', 'hubble', 'iris', 'ixion', 
     'kai', 'lani', 'leo', 'let', 'lumen', 'lumina', 'luna', 'mos', 'not', 
     'nova', 'or', 'orbit', 'phase', 'sage', 'selene', 'sol', 'soluna', 
-    'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru'
+    'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'
 }
 RESERVED_SYMBOLS = {
     '+', '++', '+=', '-', '--', '-=', '*', '*=', '/', '/=', '//', '^', 
@@ -85,7 +86,7 @@ def tokenize(lexemes: list[str], metadata: list):
         if lexeme.startswith('\\\\'):
             token_stream.append((lexeme, 'comment'))
             continue
-        if lexeme.startswith('\\*') and lexeme.endswith('*\\'):
+        if lexeme.startswith('\\*'):
             token_stream.append((lexeme, 'comment'))
             continue
             
@@ -105,20 +106,38 @@ def tokenize(lexemes: list[str], metadata: list):
             continue
             
         # 7. Is it a number?
-        # I use replace() to check for at most one decimal point.
-        if lexeme.replace('.', '', 1).isdigit():
-            if '.' in lexeme:
-                # It's a float ('flux_lit')
-                # I normalize the value here (e.g., "05.10" -> "5.1")
-                integer_part, fractional_part = lexeme.split('.')
-                integer_part = integer_part.lstrip('0') or '0'
-                fractional_part = fractional_part.rstrip('0') or '0'
-                normalized = integer_part + '.' + fractional_part
-                token_stream.append((normalized, 'flux_lit')) 
+        # I use replace() to check for at most one decimal point (ignoring optional leading minus).
+        clean_lexeme = lexeme.lstrip('-')
+        if clean_lexeme.replace('.', '', 1).isdigit():
+            if '.' in clean_lexeme:
+                # It's a float type (either FLUX or ASTER)
+                # We split by '.' to check fractional precision
+                parts = clean_lexeme.split('.')
+                fractional_part = parts[1] if len(parts) > 1 else ""
+                
+                # Normalize: Remove leading zeros from int part, trailing from frac part
+                # For negative numbers, preserve the sign manually
+                sign = "-" if lexeme.startswith("-") else ""
+                integer_part = parts[0].lstrip('0') or '0'
+                # Note: We keep trailing zeros for precision check? 
+                # Usually precision implies significant digits. 
+                # But the user requirement implies raw length check "up to 4 digits".
+                # We will normalize the value string, but check type based on input length?
+                # Let's normalize first.
+                fractional_part_norm = fractional_part.rstrip('0') or '0'
+                normalized = f"{sign}{integer_part}.{fractional_part_norm}"
+                
+                # Check ORIGINAL fractional length for classification (standard behavior)
+                # or normalized? "up to 4 digits" usually means capacity.
+                # If input is 1.12345, it fits in ASTER, not FLUX.
+                if len(fractional_part) <= 4:
+                    token_stream.append((normalized, 'flux_lit'))
+                else:
+                    token_stream.append((normalized, 'aster_lit'))
             else:
                 # It's an integer ('kai_lit')
-                # I normalize this too (e.g., "007" -> "7")
-                normalized = lexeme.lstrip('0') or '0'
+                sign = "-" if lexeme.startswith("-") else ""
+                normalized = sign + (clean_lexeme.lstrip('0') or '0')
                 token_stream.append((normalized, 'kai_lit')) 
             continue
         
