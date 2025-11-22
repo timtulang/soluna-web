@@ -52,7 +52,7 @@ def run_lexer(code: str):
 
     # 2. Process the lexer's output into a cleaner list of dictionaries.
     # The output from tokenize_all() is [((value, type), meta), ...],
-    # so I flatten it into [{type, value, start, end}, ...].
+    # so I flatten it into [{type, value, start, end, line, col}, ...].
     processed_tokens = []
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
@@ -60,37 +60,77 @@ def run_lexer(code: str):
             "type": token_type.upper(), # I uppercase the type for consistency
             "value": value,
             "start": meta['start'],
-            "end": meta['end']
+            "end": meta['end'],
+            "line": meta['line'], # Added line
+            "col": meta['col']    # Added col
         })
 
     # 3. Insert WHITESPACE tokens.
     # My lexer *skips* whitespace, but the frontend needs it.
-    # I iterate through my processed tokens and check for gaps
-    # between them (e.g., if token 1 ends at index 10 and token 2
-    # starts at index 15, I create a WHITESPACE token for 10-15).
+    # I iterate through my processed tokens and check for gaps.
+    
     final_tokens = []
     last_end = 0
+    
+    # We initialize trackers for line/col to calculate positions for whitespace
+    current_line = 1
+    current_col = 1
+
     for token in processed_tokens:
+        start_index = token["start"]
+
         # Check if there's a gap between the last token and this one
-        if token["start"] > last_end:
-            whitespace_value = code[last_end:token["start"]]
+        if start_index > last_end:
+            whitespace_value = code[last_end:start_index]
+            
+            # Add the whitespace token with calculated line/col
             final_tokens.append({
                 "type": "WHITESPACE",
                 "value": whitespace_value,
                 "start": last_end,
-                "end": token["start"]
+                "end": start_index,
+                "line": current_line,
+                "col": current_col
             })
+            
+            # Advance our position trackers past the whitespace
+            newlines = whitespace_value.count('\n')
+            if newlines > 0:
+                current_line += newlines
+                current_col = len(whitespace_value) - whitespace_value.rfind('\n')
+            else:
+                current_col += len(whitespace_value)
+
         # Add the current (non-whitespace) token
         final_tokens.append(token)
+        
+        # Sync our trackers to the token's actual end position 
+        # so the NEXT whitespace starts at the right place.
+        # We start at the token's 'line' and 'col' (authoritative source)
+        current_line = token['line']
+        current_col = token['col']
+        
+        # Add the length of the token to find where it ends
+        token_val = token['value']
+        newlines = token_val.count('\n')
+        if newlines > 0:
+            current_line += newlines
+            current_col = len(token_val) - token_val.rfind('\n')
+        else:
+            current_col += len(token_val)
+
         last_end = token["end"]
         
     # 4. Add any trailing whitespace after the very last token.
     if last_end < len(code):
+        whitespace_value = code[last_end:]
         final_tokens.append({
             "type": "WHITESPACE",
-            "value": code[last_end:],
+            "value": whitespace_value,
             "start": last_end,
-            "end": len(code)
+            "end": len(code),
+            "line": current_line,
+            "col": current_col
         })
 
     # 5. Return both the final list of tokens (with whitespace) and errors.
@@ -114,8 +154,6 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             
             # I added this try/except to handle different payload formats.
-            # My frontend might send a simple string or a JSON object
-            # like {"code": "..."}. This handles both.
             try:
                 payload = json.loads(data)
                 code = payload.get("code", "")

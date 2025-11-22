@@ -55,7 +55,10 @@ def tokenize(lexemes: list[str], metadata: list):
     """
     token_stream = []
     
-    for lexeme in lexemes:
+    for i, lexeme in enumerate(lexemes):
+        # Safe access to metadata
+        meta = metadata[i] if i < len(metadata) else {}
+
         # This is a safe-guard, though my current lexer.py doesn't
         # pass tuples.
         if isinstance(lexeme, tuple):
@@ -67,7 +70,9 @@ def tokenize(lexemes: list[str], metadata: list):
         # with the most common and cheapest checks.
         
         # 1. Is it a reserved word?
-        if lexeme in RESERVED_WORDS:
+        # Modified logic: Check if we are forced to treat it as an ID
+        # (e.g. "kai*" where "kai" is accepted by ID state but rejected by Keyword state)
+        if lexeme in RESERVED_WORDS and not meta.get('force_id'):
             token_stream.append((lexeme, lexeme))
             continue
             

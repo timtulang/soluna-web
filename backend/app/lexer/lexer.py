@@ -14,7 +14,7 @@
 #
 
 import sys
-from .td import STATES             # My FA state machine
+from .td import STATES, ID_END_STATES # My FA state machine
 from .token import tokenize        # The second-pass classifier
 from . import lexer_errors        # My error handling module
 
@@ -81,8 +81,8 @@ class Lexer:
         the current `self.cursor`.
         
         Returns:
-            (str, int): (lexeme, new_cursor_pos) on success.
-            (None, tuple): (None, error_tuple) on failure.
+            (str, int, set): (lexeme, new_cursor_pos, accepted_states) on success.
+            (None, tuple, None): (None, error_tuple, None) on failure.
         """
         # Start the FA simulation from state 0
         active_states = {0}
@@ -99,6 +99,9 @@ class Lexer:
         last_accepted_end_index = self.cursor
         last_good_active_states = {0}
         char_that_killed_it = '\0' # The char that stopped the simulation
+        
+        # NEW: Track which states accepted the token
+        last_accepted_states = set()
         
         while active_states:
             # Store the current state before advancing
@@ -118,11 +121,16 @@ class Lexer:
                     next_state = STATES[next_state_id]
                     if next_state.isEnd and self._check_char_in_state_chars(lookahead_char, next_state.chars):
                         # If it is, this is a potential token.
-                        # I record it *only if* it's longer than the
+                        # I record it *only if* it's longer than (or equal to) the
                         # one I've already found.
-                        if len(current_lexeme) >= len(last_accepted_lexeme or ""):
+                        
+                        # Logic Update: Track states accurately
+                        if last_accepted_lexeme is None or len(current_lexeme) > len(last_accepted_lexeme):
                             last_accepted_lexeme = current_lexeme
                             last_accepted_end_index = search_index
+                            last_accepted_states = {next_state_id} # Reset for new longest match
+                        elif len(current_lexeme) == len(last_accepted_lexeme):
+                            last_accepted_states.add(next_state_id) # Add to existing match
             
             # Stop if we hit the end of the file
             if lookahead_char == '\0': 
@@ -156,14 +164,14 @@ class Lexer:
         if last_accepted_lexeme is not None and len(current_lexeme) > len(last_accepted_lexeme):
             error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
             if error: 
-                return None, error # Return the "UNFINISHED_FLUX" error
+                return None, error, None # Return the "UNFINISHED_FLUX" error
 
         # Case 2: Success. We found at least one valid token.
         # The `last_accepted_lexeme` holds the longest one.
         if last_accepted_lexeme is not None:
             lexeme = last_accepted_lexeme
             new_cursor_pos = last_accepted_end_index
-            return lexeme, new_cursor_pos
+            return lexeme, new_cursor_pos, last_accepted_states
         
         # Case 3: Total failure. No valid state transitions *at all*
         # from the start, or an invalid delimiter.
@@ -175,7 +183,7 @@ class Lexer:
             start_meta,
             failed_char # Pass the char that *caused* the error
         )
-        return None, error
+        return None, error, None
 
     def tokenize_all(self):
         """
@@ -205,7 +213,7 @@ class Lexer:
             start_line, start_col = self.line, self.col
             
             # 3. Try to get the next token
-            lexeme, result = self._get_next_token()
+            lexeme, result, accepted_states = self._get_next_token()
             
             # 4. Handle Failure ("Panic and Recover")
             if lexeme is None:
@@ -214,23 +222,52 @@ class Lexer:
                 # Format and store the error
                 errors.append(lexer_errors.format_error(error_tuple))
                 
-                # This is the "panic" step: I advance the cursor by 1
-                # to get past the bad character, then `continue`
-                # to try lexing again from the *next* character.
-                char_at_cursor = self._get_char_at(self.cursor)
-                if char_at_cursor == '\n':
-                    self.line += 1
-                    self.col = 1
+                # Handle INVALID_DELIMITER specially to separate the invalid token from the next error
+                if error_tuple[0] == 'INVALID_DELIMITER':
+                    # Data is (lexeme, delim)
+                    bad_lexeme, _ = error_tuple[2]
+                    
+                    # Advance by the length of the lexeme (consuming the "valid" part)
+                    # so the next iteration starts at the bad delimiter.
+                    # We must update line/col correctly for the skipped text.
+                    for char in bad_lexeme:
+                        if char == '\n':
+                            self.line += 1
+                            self.col = 1
+                        else:
+                            self.col += 1
+                    self.cursor += len(bad_lexeme)
                 else:
-                    self.col += 1
-                self.cursor += 1 # Advance!
+                    # Standard panic: Advance by 1
+                    char_at_cursor = self._get_char_at(self.cursor)
+                    if char_at_cursor == '\n':
+                        self.line += 1
+                        self.col = 1
+                    else:
+                        self.col += 1
+                    self.cursor += 1 # Advance!
                 
                 continue # Go to the next loop iteration
             
             # 5. Handle Success
             end_cursor = result
+            
+            # Determine if this token is forced to be an Identifier
+            # This happens when a Reserved Word string (e.g. "kai") is accepted
+            # by an Identifier state (because of a specific delimiter like '*')
+            # but rejected by the Keyword state.
+            is_forced_id = False
+            if accepted_states and accepted_states.issubset(ID_END_STATES):
+                is_forced_id = True
+
             lexemes.append(lexeme)
-            metadata.append({'line': start_line, 'col': start_col, 'start': start_cursor, 'end': end_cursor})
+            metadata.append({
+                'line': start_line, 
+                'col': start_col, 
+                'start': start_cursor, 
+                'end': end_cursor,
+                'force_id': is_forced_id # Pass this hint to token.py
+            })
             
             # 6. Advance the main cursor and line/col counts
             # I set the cursor to the *end* of the lexeme

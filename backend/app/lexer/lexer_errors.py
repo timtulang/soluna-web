@@ -79,16 +79,31 @@ def check_for_total_failure_error(
     line, col, _, _ = start_metadata
 
     # --- Invalid Delimiter Check ---
-    # This is for when a *valid* token was found, but the *next*
-    # character was not a valid delimiter. (e.g., "letx" or "123a")
+    # This is for when a *valid* token was found (conceptually), but the *next*
+    # character was not a valid delimiter. (e.g., "letx" or "123a" or "kai?")
     if char_that_killed_it != '\0' and last_good_active_states:
-        # Check if *all* states we were in were end states.
-        all_were_end_states = all(
-            state_id in STATES and STATES[state_id].isEnd
-            for state_id in last_good_active_states
-        )
-        if all_were_end_states:
-            # This is the classic invalid delimiter error.
+        
+        # LOGIC UPDATE: 
+        # We check if ANY of the active states could have transitioned to an End State.
+        # In this Lexer engine, 'active_states' are never End States themselves.
+        # They are the states *before* the End State.
+        # So we look at the branches of the active states.
+        
+        potential_end_state_reachable = False
+        for state_id in last_good_active_states:
+            if state_id not in STATES: continue
+            
+            # Check all branches from this state
+            for branch_id in STATES[state_id].branches:
+                if branch_id in STATES and STATES[branch_id].isEnd:
+                    potential_end_state_reachable = True
+                    break
+            if potential_end_state_reachable:
+                break
+
+        if potential_end_state_reachable:
+            # We were at the doorstep of a valid token (like 'kai'), but the
+            # char_that_killed_it (e.g. '?') wasn't a valid delimiter to cross the threshold.
             return ('INVALID_DELIMITER', (line, col), (current_lexeme, char_that_killed_it))
 
     # --- End-of-File (EOF) Error Check ---
@@ -129,6 +144,8 @@ def format_error(error_tuple):
     elif error_type == 'INVALID_DELIMITER':
         lexeme, delim = data
         # Adjust column to point *after* the lexeme, at the bad delimiter.
+        # NOTE: We might want to point to the start of the word or the delimiter.
+        # Currently pointing to the delimiter.
         error_info["col"] = col + len(lexeme)
         error_info["message"] = f"Invalid delimiter '{delim}' after token '{lexeme}'."
     elif error_type in ['UNCLOSED_STRING', 'UNCLOSED_COMMENT']:
