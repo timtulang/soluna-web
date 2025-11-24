@@ -292,7 +292,7 @@ STATES = {
     305: State('"', [306]), 
     306: State(DELIMS['most_data_type_delim'], end = True),
     307: State('\\', [308]), 
-    308: State(REGDEF['ascii_298_302'], [304]),
+    308: State(REGDEF['ascii'], [304, 305]),
     
     # --- Comments (Single and Multi-line) ---
     309: State('\\', [310, 313]), 

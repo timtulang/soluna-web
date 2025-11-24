@@ -18,7 +18,7 @@ DELIMS = {
     'string_concat_delim': {'(', '"', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'string_length_delim': {'(', '"', '\'', '_', *REGDEF['alphabet']},
     'unary_delim': {'(', '*', '%', '/', *REGDEF['relational_operators'], ')', ';', '&', '|', '\'', '_', '=', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
-    'identifier_delim': {*REGDEF['free_delim'], *REGDEF['arithmetic_operators'], *REGDEF['relational_operators'], '(', ')', '[', '}', '.', ';', ',', '&', '|', '='},
+    'identifier_delim': {*REGDEF['free_delim'], *REGDEF['arithmetic_operators'], *REGDEF['relational_operators'], '(', ')', '[' , ']', '}', '.', ';', ',', '&', '|', '='},
     'warp_delim': {';'},
     'open_bracket_delim': {'"', '\'', '-', '(', '[', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'close_bracket_delim': {';', ',', ')', '}', *REGDEF['free_delim']},

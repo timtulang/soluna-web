@@ -23,8 +23,17 @@ def check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta
     """
     line, col, _, _ = start_metadata
     
+    # 1. Check for Unfinished Float (e.g. "123.")
     if not last_good_active_states.isdisjoint(UNFINISHED_FLUX_STATES):
         return ('UNFINISHED_FLUX', (line, col), current_lexeme)
+    
+    # 2. NEW: Check for Unclosed String (died due to invalid char inside string)
+    if not last_good_active_states.isdisjoint(UNCLOSED_STRING_STATES):
+        return ('UNCLOSED_STRING', (line, col), current_lexeme)
+
+    # 3. NEW: Check for Unclosed Char (died due to invalid char inside char literal)
+    if not last_good_active_states.isdisjoint(UNCLOSED_CHAR_STATES):
+        return ('UNCLOSED_CHAR', (line, col), current_lexeme)
         
     return None
 
@@ -40,9 +49,7 @@ def check_for_total_failure_error(
     """
     line, col, _, _ = start_metadata
 
-    # --- NEW FIX ---
-    # Check if we died in an unfinished float state (State 240).
-    # This handles "999." where "999" is no longer accepted as an int.
+    # Check if we died in an unfinished float state
     if not last_good_active_states.isdisjoint(UNFINISHED_FLUX_STATES):
         return ('UNFINISHED_FLUX', (line, col), current_lexeme)
 
@@ -90,6 +97,7 @@ def format_error(error_tuple):
         error_info["col"] = col + len(lexeme)
         error_info["message"] = f"Invalid delimiter '{delim}' after token \"{lexeme}\"."
     elif error_type in ['UNCLOSED_STRING', 'UNCLOSED_COMMENT']:
+        # This will now display "Unclosed string" for your "sky' case
         error_info["message"] = f"Unclosed {error_type.split('_')[1].lower()}."
     elif error_type == 'UNCLOSED_CHAR':
         error_info["message"] = "Unclosed char literal."

@@ -92,11 +92,17 @@ class Lexer:
         
         start_meta = (self.line, self.col, self.cursor, last_accepted_end_index)
 
-        # Dead End Check (e.g. "123.")
+        # Dead End Check (e.g. "123." or "sky')
         if last_accepted_lexeme is not None and len(current_lexeme) > len(last_accepted_lexeme):
             error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
             if error: 
                 return None, error, None 
+        
+        # NEW: Check for dead end even if NO token was accepted (e.g. "sky' where " didn't accept anything)
+        if last_accepted_lexeme is None and len(current_lexeme) > 0:
+             error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
+             if error:
+                 return None, error, None
 
         # Success
         if last_accepted_lexeme is not None:
@@ -138,11 +144,14 @@ class Lexer:
                 # --- Error Recovery ---
                 if error_tuple[0] == 'INVALID_DELIMITER':
                     bad_lexeme, _ = error_tuple[2]
-                    # Advance past the valid part of the token
                     advance_amount = len(bad_lexeme)
                 elif error_tuple[0] == 'UNFINISHED_FLUX':
                     bad_lexeme = error_tuple[2]
                     advance_amount = len(bad_lexeme)
+                elif error_tuple[0] in ['UNCLOSED_STRING', 'UNCLOSED_CHAR']:
+                     # NEW: Skip the unclosed string content (e.g. "sky) so we can continue
+                     bad_lexeme = error_tuple[2]
+                     advance_amount = len(bad_lexeme)
                 else:
                     advance_amount = 1
 
@@ -151,8 +160,7 @@ class Lexer:
                 errors.append(formatted_err)
                 
                 # Cursor Adjustment
-                if error_tuple[0] in ['INVALID_DELIMITER', 'UNFINISHED_FLUX']:
-                    # Consuming the token logic
+                if error_tuple[0] in ['INVALID_DELIMITER', 'UNFINISHED_FLUX', 'UNCLOSED_STRING', 'UNCLOSED_CHAR']:
                     text_to_skip = error_tuple[2][0] if error_tuple[0] == 'INVALID_DELIMITER' else error_tuple[2]
                     
                     for char in text_to_skip:
