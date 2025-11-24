@@ -91,11 +91,12 @@ def format_error(error_tuple):
     error_info = {"type": error_type, "line": line, "col": col}
     
     if error_type == 'UNFINISHED_FLUX':
-        error_info["message"] = f"Unfinished float literal '{data}'."
+        error_info["message"] = f"Error in '{data}' (Invalid numerical value)."
+        #error_info["message"] = f"Invalid delimiter after lexeme: '{data}'."
     elif error_type == 'INVALID_DELIMITER':
         lexeme, delim = data
         error_info["col"] = col + len(lexeme)
-        error_info["message"] = f"Invalid delimiter '{delim}' after token \"{lexeme}\"."
+        error_info["message"] = f"Invalid delimiter '{delim}' after lexeme: \"{lexeme}\"."
     elif error_type in ['UNCLOSED_STRING', 'UNCLOSED_COMMENT']:
         # This will now display "Unclosed string" for your "sky' case
         error_info["message"] = f"Unclosed {error_type.split('_')[1].lower()}."

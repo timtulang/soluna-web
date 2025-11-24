@@ -12,7 +12,6 @@
 # I define these as sets for fast O(1) lookups.
 # This is much faster than checking against a list.
 
-# Added 'zeta' to RESERVED_WORDS
 RESERVED_WORDS = {
     'and', 'aster', 'blaze', 'cos', 'flux', 'hubble', 'iris', 'ixion', 
     'kai', 'lani', 'leo', 'let', 'lumen', 'lumina', 'luna', 'mos', 'not', 

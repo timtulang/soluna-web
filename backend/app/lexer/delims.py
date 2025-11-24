@@ -24,7 +24,7 @@ DELIMS = {
     'close_bracket_delim': {';', ',', ')', '}', *REGDEF['free_delim']},
     'open_square_delim': { '“', "‘" , '-', '(', '{', '!' , '_' , *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'close_square_delim': {'[' , '=' , *REGDEF['free_delim']},
-    'open_parenthesis_delim': {'"', '+', '-', '!', '(', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
+    'open_parenthesis_delim': {'"', '+', '-', '!', '(', ')', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'close_parenthesis_delim': {';', ',', *REGDEF['general_operators'], ')', ']', '}', *REGDEF['free_delim']},
     'most_data_type_delim': {*REGDEF['general_operators'], *REGDEF['relational_operators'], ')', ']', '}', ';', ',', '.', *REGDEF['free_delim']},
     'leo_delim': {';'},
