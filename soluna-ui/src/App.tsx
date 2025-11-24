@@ -23,7 +23,48 @@ type WsMessage = {
 };
 
 const tokenColors: Record<string, string> = {
-  COMMENT: "#6a9955", KAI_LIT: "#b5cea8", FLUX_LIT: "#b5cea8", ID: "#dcdcaa", SELENE_LITERAL: "#ce9178", BLAZE_LITERAL: "#ce9178", AND: "#c586c0", ASTER: "#c586c0", BLAZE: "#c586c0", COS: "#c586c0", FLUX: "#c586c0", HUBBLE: "#c586c0", IRIS: "#c586c0", IXION: "#c586c0", KAI: "#c586c0", LANI: "#c586c0", LEO: "#c586c0", LET: "#c586c0", LUMEN: "#c586c0", LUMINA: "#c586c0", LUNA: "#c586c0", MOS: "#c586c0", NOT: "#c586c0", NOVA: "#c586c0", OR: "#c586c0", ORBIT: "#c586c0", PHASE: "#c586c0", SAGE: "#c586c0", SELENE: "#c586c0", SOL: "#c586c0", SOLUNA: "#c586c0", STAR: "#c586c0", VOID: "#c586c0", WANE: "#c586c0", WARP: "#c586c0", WAX: "#c586c0", ZARA: "#c586c0", ZERU: "#c586c0", LEO_LABEL: "#4ec9b0", DEFAULT_SYMBOL: "#569cd6", WHITESPACE: "#ffffff", UNKNOWN: "#f44747",
+  COMMENT: "#6a9955", 
+  KAI_LIT: "#b5cea8", 
+  FLUX_LIT: "#b5cea8", 
+  ID: "#dcdcaa", 
+  SELENE_LITERAL: "#ce9178", 
+  BLAZE_LITERAL: "#ce9178", 
+  AND: "#c586c0", 
+  ASTER: "#c586c0", 
+  BLAZE: "#c586c0", 
+  COS: "#c586c0", 
+  FLUX: "#c586c0", 
+  HUBBLE: "#c586c0", 
+  IRIS: "#c586c0", 
+  IXION: "#c586c0", 
+  KAI: "#c586c0", 
+  LANI: "#c586c0", 
+  LEO: "#c586c0", 
+  LET: "#c586c0", 
+  LUMEN: "#c586c0", 
+  LUMINA: "#c586c0", 
+  LUNA: "#c586c0", 
+  MOS: "#c586c0", 
+  NOT: "#c586c0", 
+  NOVA: "#c586c0", 
+  OR: "#c586c0", 
+  ORBIT: "#c586c0", 
+  PHASE: "#c586c0", 
+  SAGE: "#c586c0", 
+  SELENE: "#c586c0", 
+  SOL: "#c586c0", 
+  SOLUNA: "#c586c0", 
+  STAR: "#c586c0", 
+  VOID: "#c586c0", 
+  WANE: "#c586c0", 
+  WARP: "#c586c0", 
+  WAX: "#c586c0", 
+  ZARA: "#c586c0", 
+  ZERU: "#c586c0", 
+  LEO_LABEL: "#4ec9b0", 
+  DEFAULT_SYMBOL: "#569cd6", 
+  WHITESPACE: "#ffffff", 
+  UNKNOWN: "#f44747",
 };
 const getColor = (type: string): string => {
   if (tokenColors[type]) { return tokenColors[type]; }
@@ -140,7 +181,7 @@ const App: React.FC = () => {
           {/* Left column */}
           <div className="space-y-6">
             {/* Editor */}
-            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[40`0px]">
+            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[400px]">
               <div className="px-6 py-4 border-b border-zinc-800/50 flex items-center justify-between">
                 <h2 className="font-semibold text-zinc-200">Source Code</h2>
                 {raw && <span className="text-xs text-zinc-400">{raw.length} chars</span>}
