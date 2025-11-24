@@ -54,7 +54,7 @@ def run_lexer(code: str):
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
         processed_tokens.append({
-            "type": token_type.upper(), # I uppercase the type for consistency
+            "type": token_type, # I uppercase the type for consistency
             "value": value,
             "start": meta['start'],
             "end": meta['end'],

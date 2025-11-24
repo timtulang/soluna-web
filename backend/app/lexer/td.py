@@ -227,36 +227,36 @@ STATES = {
     # Each state in the chain (211, 213, 215...) is an end state,
     # allowing for numbers of different lengths.
     # Each state also branches to state 240 ('.') to start a float.
-    210: State(REGDEF['digit'], [211, 212, 240]), 211: State(DELIMS['most_data_type_delim'], end = True), # 1-digit int
-        212: State(REGDEF['digit'], [213, 214, 240]), 213: State(DELIMS['most_data_type_delim'], end = True), # 2-digit int
-                214: State(REGDEF['digit'], [215, 216, 240]), 215: State(DELIMS['most_data_type_delim'], end = True), # 3-digit int
-                    216: State(REGDEF['digit'], [217, 218, 240]), 217: State(DELIMS['most_data_type_delim'], end = True), # 4-digit int
-                        218: State(REGDEF['digit'], [219, 220, 240]), 219: State(DELIMS['most_data_type_delim'], end = True), # 5-digit int
-                            220: State(REGDEF['digit'], [221, 222, 240]), 221: State(DELIMS['most_data_type_delim'], end = True), # 6-digit int
-                                222: State(REGDEF['digit'], [223, 224, 240]), 223: State(DELIMS['most_data_type_delim'], end = True), # 7-digit int
-                                    224: State(REGDEF['digit'], [225, 226, 240]), 225: State(DELIMS['most_data_type_delim'], end = True), # 8-digit int
-                                        226: State(REGDEF['digit'], [227, 228, 240]), 227: State(DELIMS['most_data_type_delim'], end = True), # 9-digit int
-                                            228: State(REGDEF['digit'], [229, 230, 240]), 229: State(DELIMS['most_data_type_delim'], end = True), # 10-digit int
-                                                230: State(REGDEF['digit'], [231, 232, 240]), 231: State(DELIMS['most_data_type_delim'], end = True), # 11-digit int
-                                                    232: State(REGDEF['digit'], [233, 234, 240]), 233: State(DELIMS['most_data_type_delim'], end = True), # 12-digit int
-                                                        234: State(REGDEF['digit'], [235, 236, 240]), 235: State(DELIMS['most_data_type_delim'], end = True), # 13-digit int
-                                                            236: State(REGDEF['digit'], [237, 238, 240]), 237: State(DELIMS['most_data_type_delim'], end = True), # 14-digit int
-                                                                238: State(REGDEF['digit'], [239]), 239: State(DELIMS['most_data_type_delim'], end = True), # 15-digit int
+    210: State(REGDEF['digit'], [211, 212, 240]), 211: State(DELIMS['float_delim'], end = True), # 1-digit int
+        212: State(REGDEF['digit'], [213, 214, 240]), 213: State(DELIMS['float_delim'], end = True), # 2-digit int
+                214: State(REGDEF['digit'], [215, 216, 240]), 215: State(DELIMS['float_delim'], end = True), # 3-digit int
+                    216: State(REGDEF['digit'], [217, 218, 240]), 217: State(DELIMS['float_delim'], end = True), # 4-digit int
+                        218: State(REGDEF['digit'], [219, 220, 240]), 219: State(DELIMS['float_delim'], end = True), # 5-digit int
+                            220: State(REGDEF['digit'], [221, 222, 240]), 221: State(DELIMS['float_delim'], end = True), # 6-digit int
+                                222: State(REGDEF['digit'], [223, 224, 240]), 223: State(DELIMS['float_delim'], end = True), # 7-digit int
+                                    224: State(REGDEF['digit'], [225, 226, 240]), 225: State(DELIMS['float_delim'], end = True), # 8-digit int
+                                        226: State(REGDEF['digit'], [227, 228, 240]), 227: State(DELIMS['float_delim'], end = True), # 9-digit int
+                                            228: State(REGDEF['digit'], [229, 230, 240]), 229: State(DELIMS['float_delim'], end = True), # 10-digit int
+                                                230: State(REGDEF['digit'], [231, 232, 240]), 231: State(DELIMS['float_delim'], end = True), # 11-digit int
+                                                    232: State(REGDEF['digit'], [233, 234, 240]), 233: State(DELIMS['float_delim'], end = True), # 12-digit int
+                                                        234: State(REGDEF['digit'], [235, 236, 240]), 235: State(DELIMS['float_delim'], end = True), # 13-digit int
+                                                            236: State(REGDEF['digit'], [237, 238, 240]), 237: State(DELIMS['float_delim'], end = True), # 14-digit int
+                                                                238: State(REGDEF['digit'], [239]), 239: State(DELIMS['float_delim'], end = True), # 15-digit int
     
     # --- Numerical Values (Floats) ---
     # State 240 is the "start of fractional part" state.
     # It *must* be followed by at least one digit (state 241).
     240: State('.', [241]),
         # State 241 is the first digit *after* the decimal.
-        241: State(REGDEF['digit'], [242, 243]), 242: State(DELIMS['most_data_type_delim'], end = True), # x.1 (Length 1) -> FLUX
+        241: State(REGDEF['digit'], [242, 243]), 242: State(DELIMS['float_delim'], end = True), # x.1 (Length 1) -> FLUX
             # This chain (243, 245, etc.) accepts more fractional digits.
-            243: State(REGDEF['digit'], [244, 245]), 244: State(DELIMS['most_data_type_delim'], end = True), # x.12 (Length 2) -> FLUX
-                245: State(REGDEF['digit'], [246, 247]), 246: State(DELIMS['most_data_type_delim'], end = True), # x.123 (Length 3) -> FLUX
-                    247: State(REGDEF['digit'], [248, 249]), 248: State(DELIMS['most_data_type_delim'], end = True), # x.1234 (Length 4) -> FLUX
-                        249: State(REGDEF['digit'], [250, 251]), 250: State(DELIMS['most_data_type_delim'], end = True), # x.12345 (Length 5) -> ASTER
-                            251: State(REGDEF['digit'], [252, 253]), 252: State(DELIMS['most_data_type_delim'], end = True), # x.123456 (Length 6) -> ASTER
-                                253: State(REGDEF['digit'], [254, 255]), 254: State(DELIMS['most_data_type_delim'], end = True), # x.1234567 (Length 7) -> ASTER
-                                    255: State(REGDEF['digit'], [256]), 256: State(DELIMS['most_data_type_delim'], end = True), # x.12345678 (Length 8) -> ASTER
+            243: State(REGDEF['digit'], [244, 245]), 244: State(DELIMS['float_delim'], end = True), # x.12 (Length 2) -> FLUX
+                245: State(REGDEF['digit'], [246, 247]), 246: State(DELIMS['float_delim'], end = True), # x.123 (Length 3) -> FLUX
+                    247: State(REGDEF['digit'], [248, 249]), 248: State(DELIMS['float_delim'], end = True), # x.1234 (Length 4) -> FLUX
+                        249: State(REGDEF['digit'], [250, 251]), 250: State(DELIMS['float_delim'], end = True), # x.12345 (Length 5) -> ASTER
+                            251: State(REGDEF['digit'], [252, 253]), 252: State(DELIMS['float_delim'], end = True), # x.123456 (Length 6) -> ASTER
+                                253: State(REGDEF['digit'], [254, 255]), 254: State(DELIMS['float_delim'], end = True), # x.1234567 (Length 7) -> ASTER
+                                    255: State(REGDEF['digit'], [256]), 256: State(DELIMS['float_delim'], end = True), # x.12345678 (Length 8) -> ASTER
     
     # --- Identifiers ---
     # State 257: Must start with a letter or underscore.
@@ -290,7 +290,7 @@ STATES = {
     300: State(DELIMS['most_data_type_delim'], end = True),
     301: State('\\', [302]), 
     302: State(REGDEF['ascii_298_302'], [299]), 
-    303: State('"', [304, 307]), 
+    303: State('"', [304, 305, 307]), 
     304: State(REGDEF['ascii_298_302'], [304, 305, 307]), 
     305: State('"', [306]), 
     306: State(DELIMS['most_data_type_delim'], end = True),

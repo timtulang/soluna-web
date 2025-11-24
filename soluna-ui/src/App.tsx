@@ -23,52 +23,64 @@ type WsMessage = {
 };
 
 const tokenColors: Record<string, string> = {
-  COMMENT: "#6a9955", 
-  KAI_LIT: "#b5cea8", 
-  FLUX_LIT: "#b5cea8", 
-  ID: "#dcdcaa", 
-  SELENE_LITERAL: "#ce9178", 
-  BLAZE_LITERAL: "#ce9178", 
-  AND: "#c586c0", 
-  ASTER: "#c586c0", 
-  BLAZE: "#c586c0", 
-  COS: "#c586c0", 
-  FLUX: "#c586c0", 
-  HUBBLE: "#c586c0", 
-  IRIS: "#c586c0", 
-  IXION: "#c586c0", 
-  KAI: "#c586c0", 
-  LANI: "#c586c0", 
-  LEO: "#c586c0", 
-  LET: "#c586c0", 
-  LUMEN: "#c586c0", 
-  LUMINA: "#c586c0", 
-  LUNA: "#c586c0", 
-  MOS: "#c586c0", 
-  NOT: "#c586c0", 
-  NOVA: "#c586c0", 
-  OR: "#c586c0", 
-  ORBIT: "#c586c0", 
-  PHASE: "#c586c0", 
-  SAGE: "#c586c0", 
-  SELENE: "#c586c0", 
-  SOL: "#c586c0", 
-  SOLUNA: "#c586c0", 
-  STAR: "#c586c0", 
-  VOID: "#c586c0", 
-  WANE: "#c586c0", 
-  WARP: "#c586c0", 
-  WAX: "#c586c0", 
-  ZARA: "#c586c0", 
-  ZERU: "#c586c0", 
-  LEO_LABEL: "#4ec9b0", 
-  DEFAULT_SYMBOL: "#569cd6", 
-  WHITESPACE: "#ffffff", 
-  UNKNOWN: "#f44747",
+  // Literals & Identifiers
+  comment: "#6a9955", 
+  kai_lit: "#b5cea8", 
+  flux_lit: "#b5cea8",
+  aster_lit: "#b5cea8", 
+  id: "#dcdcaa", 
+  selene_literal: "#ce9178", 
+  blaze_literal: "#ce9178", 
+  leo_label: "#4ec9b0", 
+  
+  // Whitespace
+  whitespace: "#ffffff",
+  newline: "#ffffff",
+  
+  // Keywords (These correspond to the actual reserved words, so they are lowercase)
+  and: "#c586c0", 
+  aster: "#c586c0", 
+  blaze: "#c586c0", 
+  cos: "#c586c0", 
+  flux: "#c586c0", 
+  hubble: "#c586c0", 
+  iris: "#c586c0", 
+  ixion: "#c586c0", 
+  kai: "#c586c0", 
+  lani: "#c586c0", 
+  leo: "#c586c0", 
+  let: "#c586c0", 
+  lumen: "#c586c0", 
+  lumina: "#c586c0", 
+  luna: "#c586c0", 
+  mos: "#c586c0", 
+  not: "#c586c0", 
+  nova: "#c586c0", 
+  or: "#c586c0", 
+  orbit: "#c586c0", 
+  phase: "#c586c0", 
+  sage: "#c586c0", 
+  selene: "#c586c0", 
+  sol: "#c586c0", 
+  soluna: "#c586c0", 
+  star: "#c586c0", 
+  void: "#c586c0", 
+  wane: "#c586c0", 
+  warp: "#c586c0", 
+  wax: "#c586c0", 
+  zara: "#c586c0", 
+  zeru: "#c586c0", 
+  zeta: "#c586c0",
+  
+  // Fallbacks
+  unknown: "#f44747",
+  default_symbol: "#569cd6", 
 };
+
 const getColor = (type: string): string => {
   if (tokenColors[type]) { return tokenColors[type]; }
-  if (type.length <= 3 && !/^[A-Z0-9_]+$/.test(type)) { return tokenColors.DEFAULT_SYMBOL; }
+  // Adjusted fallback logic for lowercase
+  if (type.length <= 3 && !/^[a-z0-9_]+$/.test(type)) { return tokenColors.default_symbol; }
   return "#d4d4d4";
 };
 
