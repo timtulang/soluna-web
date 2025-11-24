@@ -131,9 +131,6 @@ STATES = {
     143: State(DELIMS['most_symbol_delim'], end = True), # += (End state)
     
     # -, --, -=, AND NEGATIVE NUMBERS
-    # Modified 144: Accepts '-' and branches to:
-    # 145 (- delimiter), 146 (--), 148 (-=)
-    # AND 210 (Start of number chain for negative literals)
     144: State('-', [145, 146, 148, 210]), 
     145: State(DELIMS['minus_delim'], end = True), # -
     146: State('-', [147]), 
@@ -284,7 +281,7 @@ STATES = {
                                                                                 295: State(REGDEF['alphanumeric'], [296]), 296: State(DELIMS['identifier_delim'], end = True),
     
     # --- Character Literals (e.g., 'a', '\n') ---
-    297: State('\'', [298, 301]), 
+    297: State('\'', [298, 299, 301]), 
     298: State(REGDEF['ascii_298_302'], [299]), 
     299: State('\'', [300]), 
     300: State(DELIMS['most_data_type_delim'], end = True),

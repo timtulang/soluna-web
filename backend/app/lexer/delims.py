@@ -17,7 +17,7 @@ DELIMS = {
     'semicolon_delim': {*REGDEF['alphabet'], *REGDEF['free_delim']},
     'string_concat_delim': {'(', '"', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'string_length_delim': {'(', '"', '\'', '_', *REGDEF['alphabet']},
-    'unary_delim': {'(', '+', '-', '*', '%', '/', *REGDEF['relational_operators'], ')', ';', '&', '|', '\'', '_', '=', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
+    'unary_delim': {'(', '*', '%', '/', *REGDEF['relational_operators'], ')', ';', '&', '|', '\'', '_', '=', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'identifier_delim': {*REGDEF['free_delim'], *REGDEF['arithmetic_operators'], *REGDEF['relational_operators'], '(', ')', '[', '}', '.', ';', ',', '&', '|', '='},
     'warp_delim': {';'},
     'open_bracket_delim': {'"', '\'', '-', '(', '[', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
@@ -30,9 +30,5 @@ DELIMS = {
     'leo_delim': {';'},
     'zeru_delim': {*REGDEF['free_delim'], ';', ')', *REGDEF['arithmetic_operators'], *REGDEF['relational_operators']},
     'zara_delim': {*REGDEF['free_delim'], '(', ';'},
-
-    # --- NEW: Specific delimiter for Floats ---
-    # This is exactly like 'most_data_type_delim' but WITHOUT the '.'
-    # This forces the lexer to error out if it sees a second dot (e.g., 1.2.3)
     'float_delim': {*REGDEF['general_operators'], *REGDEF['relational_operators'], ')', ']', '}', ';', ',', *REGDEF['free_delim']},
 }
