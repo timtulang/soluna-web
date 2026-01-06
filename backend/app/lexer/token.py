@@ -14,7 +14,7 @@
 
 RESERVED_WORDS = {
     'and', 'aster', 'blaze', 'cos', 'flux', 'hubble', 'iris', 'ixion', 
-    'kai', 'lani', 'leo', 'let', 'lumen', 'lumina', 'luna', 'mos', 'not', 
+    'kai', 'lani', 'leo', 'let', 'local', 'lumen', 'lumina', 'luna', 'mos', 'not', 
     'nova', 'or', 'orbit', 'phase', 'sage', 'selene', 'sol', 'soluna', 
     'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'
 }
@@ -91,17 +91,17 @@ def tokenize(lexemes: list[str], metadata: list):
             
         # 4. Is it my custom 'leo_label'?
         if is_leo_label(lexeme):
-            token_stream.append((lexeme, 'leo_label'))
+            token_stream.append((lexeme, 'label'))
             continue
             
         # 5. Is it a string literal?
         if lexeme.startswith('"') and lexeme.endswith('"'):
-            token_stream.append((lexeme, 'selene_literal'))
+            token_stream.append((lexeme, 'string'))
             continue
             
         # 6. Is it a char literal?
         if lexeme.startswith("'") and lexeme.endswith("'"):
-            token_stream.append((lexeme, 'blaze_literal'))
+            token_stream.append((lexeme, 'char'))
             continue
             
         # 7. Is it a number?
@@ -130,18 +130,18 @@ def tokenize(lexemes: list[str], metadata: list):
                 # or normalized? "up to 4 digits" usually means capacity.
                 # If input is 1.12345, it fits in ASTER, not FLUX.
                 if len(fractional_part) <= 4:
-                    token_stream.append((normalized, 'flux_lit'))
+                    token_stream.append((normalized, 'float'))
                 else:
-                    token_stream.append((normalized, 'aster_lit'))
+                    token_stream.append((normalized, 'double'))
             else:
                 # It's an integer ('kai_lit')
                 sign = "-" if lexeme.startswith("-") else ""
                 normalized = sign + (clean_lexeme.lstrip('0') or '0')
-                token_stream.append((normalized, 'kai_lit')) 
+                token_stream.append((normalized, 'int')) 
             continue
         
         # 8. If it's none of the above, it must be an identifier.
-        token_stream.append((lexeme, 'id'))
+        token_stream.append((lexeme, 'identifier'))
 
     # Finally, I re-combine the newly classified tokens
     # with their original metadata (line, col, index).
