@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import type { ChangeEvent } from "react";
+import type { ChangeEvent, KeyboardEvent } from "react";
+
+// ... [Keep your type definitions and tokenColors map exactly as they are] ...
 
 type Token = {
   type: string;
@@ -36,41 +38,16 @@ const tokenColors: Record<string, string> = {
   // Whitespace
   whitespace: "#ffffff",
   newline: "#ffffff",
+  tab: "#ffffff",
   
-  // Keywords (These correspond to the actual reserved words, so they are lowercase)
-  and: "#c586c0", 
-  aster: "#c586c0", 
-  blaze: "#c586c0", 
-  cos: "#c586c0", 
-  flux: "#c586c0", 
-  hubble: "#c586c0", 
-  iris: "#c586c0", 
-  ixion: "#c586c0", 
-  kai: "#c586c0", 
-  lani: "#c586c0", 
-  leo: "#c586c0", 
-  let: "#c586c0", 
-  lumen: "#c586c0", 
-  lumina: "#c586c0", 
-  luna: "#c586c0", 
-  mos: "#c586c0", 
-  not: "#c586c0", 
-  nova: "#c586c0", 
-  or: "#c586c0", 
-  orbit: "#c586c0", 
-  phase: "#c586c0", 
-  sage: "#c586c0", 
-  selene: "#c586c0", 
-  sol: "#c586c0", 
-  soluna: "#c586c0", 
-  star: "#c586c0", 
-  void: "#c586c0", 
-  wane: "#c586c0", 
-  warp: "#c586c0", 
-  wax: "#c586c0", 
-  zara: "#c586c0", 
-  zeru: "#c586c0", 
-  zeta: "#c586c0",
+  // Keywords
+  and: "#c586c0", aster: "#c586c0", blaze: "#c586c0", cos: "#c586c0", flux: "#c586c0", 
+  hubble: "#c586c0", iris: "#c586c0", ixion: "#c586c0", kai: "#c586c0", lani: "#c586c0", 
+  leo: "#c586c0", let: "#c586c0", lumen: "#c586c0", lumina: "#c586c0", luna: "#c586c0", 
+  mos: "#c586c0", not: "#c586c0", nova: "#c586c0", or: "#c586c0", orbit: "#c586c0", 
+  phase: "#c586c0", sage: "#c586c0", selene: "#c586c0", sol: "#c586c0", soluna: "#c586c0", 
+  star: "#c586c0", void: "#c586c0", wane: "#c586c0", warp: "#c586c0", wax: "#c586c0", 
+  zara: "#c586c0", zeru: "#c586c0", zeta: "#c586c0",
   
   // Fallbacks
   unknown: "#f44747",
@@ -79,11 +56,9 @@ const tokenColors: Record<string, string> = {
 
 const getColor = (type: string): string => {
   if (tokenColors[type]) { return tokenColors[type]; }
-  // Adjusted fallback logic for lowercase
   if (type.length <= 3 && !/^[a-z0-9_]+$/.test(type)) { return tokenColors.default_symbol; }
   return "#d4d4d4";
 };
-
 
 // --- Component ---
 const App: React.FC = () => {
@@ -93,14 +68,15 @@ const App: React.FC = () => {
   const [errors, setErrors] = useState<LexerError[]>([]);
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // We use this ref to manually set cursor position after a state update
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Connect to websocket
   useEffect(() => {
     let ws: WebSocket;
 
     function connect() {
       setWsStatus("CONNECTING");
-      // Ensure this port matches your Python server
       ws = new WebSocket("ws://localhost:8000/ws");
       wsRef.current = ws;
 
@@ -109,14 +85,8 @@ const App: React.FC = () => {
       ws.addEventListener("message", (ev) => {
         try {
           const data: WsMessage = JSON.parse(ev.data);
-          
-          if (data.tokens) {
-            setTokens(data.tokens);
-          }
-          if (data.errors) {
-            setErrors(data.errors);
-          }
-
+          if (data.tokens) setTokens(data.tokens);
+          if (data.errors) setErrors(data.errors);
         } catch (e) {
           console.error("Invalid message from server", e);
         }
@@ -144,7 +114,6 @@ const App: React.FC = () => {
     if (sendTimer.current) clearTimeout(sendTimer.current);
     sendTimer.current = setTimeout(() => {
       try {
-        // Send empty tokens array to clear table if code is empty
         if (code.trim() === "") {
             setTokens([]);
             setErrors([]);
@@ -162,6 +131,34 @@ const App: React.FC = () => {
     sendCodeDebounced(code);
   }
 
+  // --- NEW: Handle Tab Key ---
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Tab') {
+      e.preventDefault(); // Stop focus from moving
+      
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+      const indent = "    "; 
+      
+      const newValue = raw.substring(0, start) + indent + raw.substring(end);
+      
+      setRaw(newValue);
+      sendCodeDebounced(newValue);
+
+      // Move the cursor to after the inserted spaces
+      // We need to use setTimeout or useLayoutEffect to ensure this runs after render,
+      // but in simple handlers, updating the ref immediately after often works 
+      // if React schedules the re-render efficiently. 
+      // However, the most reliable way in raw React without a layout effect 
+      // is usually scheduling it for the next tick.
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + indent.length;
+        }
+      }, 0);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-black text-zinc-100 font-sans">
@@ -200,33 +197,15 @@ const App: React.FC = () => {
               </div>
               
               <textarea
+                ref={textareaRef} // Attach Ref here
                 value={raw}
                 onChange={onEditorChange}
+                onKeyDown={handleKeyDown} // Attach Key Handler here
                 placeholder="// Start typing your code here..."
                 className="w-full flex-1 p-6 bg-transparent text-zinc-100 font-mono text-sm resize-none focus:outline-none placeholder-zinc-600 leading-relaxed"
                 spellCheck="false"
               />
             </div>
-
-            {/* Syntax Preview
-             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-zinc-800/50">
-                <h2 className="font-semibold text-zinc-200">Syntax Highlight Preview</h2>
-              </div>
-              <div className="p-6 font-mono text-sm min-h-[100px] max-h-[200px] overflow-y-auto bg-black/30">
-                {tokens.length === 0 && errors.length === 0 ? (
-                  <span className="text-zinc-600 italic">Preview will appear here...</span>
-                ) : (
-                  <div className="whitespace-pre-wrap break-words">
-                    {tokens.map((t, i) => (
-                      <span key={i} style={{color: getColor(t.type)}}>
-                        {t.value}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div> */}
 
             {errors.length > 0 && (
                 <div className="space-y-2">
@@ -271,22 +250,10 @@ const App: React.FC = () => {
                   <tbody className="divide-y divide-zinc-800/50">
                     {tokens.map((t, i) => (
                       <tr key={i} className="hover:bg-zinc-800/30 transition-colors group">
-                        {/* Row Number */}
-                        <td className="px-4 py-1 text-zinc-500 tabular-nums">
-                          {t.line}
-                        </td>
-                        {/* Column Number */}
-                        <td className="px-4 py-1 text-zinc-500 tabular-nums">
-                          {t.col}
-                        </td>
-                        {/* Lexeme Value */}
-                        <td className="px-4 py-1 text-zinc-300 break-all">
-                           {t.value}
-                        </td>
-                        {/* Token Type */}
-                        <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>
-                          {t.type}
-                        </td>
+                        <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.line}</td>
+                        <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.col}</td>
+                        <td className="px-4 py-1 text-zinc-300 break-all">{t.value}</td>
+                        <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>{t.type}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -296,7 +263,6 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        {/* Footer */}
         <footer className="mt-8 text-center">
           <div className="inline-flex items-center gap-3 px-6 py-3 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-full text-sm">
             <span className="text-zinc-400">Server:</span>

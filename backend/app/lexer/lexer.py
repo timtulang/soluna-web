@@ -11,7 +11,9 @@ class Lexer:
     WHITESPACE = {' ', '\n', '\t', '\r'}
     
     def __init__(self, source_code: str):
-        self.source_code = source_code
+        # PREPROCESSING: Convert 4 spaces into 1 tab character
+        # This normalizes the input before lexing begins.
+        self.source_code = source_code.replace("    ", "\t")
         self.cursor = 0
         self.line = 1
         self.col = 1
@@ -34,6 +36,9 @@ class Lexer:
                 if char == '\n': 
                     self.line += 1
                     self.col = 1
+                elif char == '\t':
+                    # Treat a tab as 4 columns for accurate visual tracking
+                    self.col += 4
                 else: 
                     self.col += 1
                 self.cursor += 1
@@ -98,7 +103,7 @@ class Lexer:
             if error: 
                 return None, error, None 
         
-        # NEW: Check for dead end even if NO token was accepted (e.g. "sky' where " didn't accept anything)
+        # Check for dead end even if NO token was accepted
         if last_accepted_lexeme is None and len(current_lexeme) > 0:
              error = lexer_errors.check_for_dead_end_error(last_good_active_states, current_lexeme, start_meta)
              if error:
@@ -149,7 +154,6 @@ class Lexer:
                     bad_lexeme = error_tuple[2]
                     advance_amount = len(bad_lexeme)
                 elif error_tuple[0] in ['UNCLOSED_STRING', 'UNCLOSED_CHAR']:
-                     # NEW: Skip the unclosed string content (e.g. "sky) so we can continue
                      bad_lexeme = error_tuple[2]
                      advance_amount = len(bad_lexeme)
                 else:
@@ -167,6 +171,8 @@ class Lexer:
                         if char == '\n':
                             self.line += 1
                             self.col = 1
+                        elif char == '\t':
+                            self.col += 4
                         else:
                             self.col += 1
                     self.cursor += len(text_to_skip)
@@ -176,6 +182,8 @@ class Lexer:
                     if char_at_cursor == '\n':
                         self.line += 1
                         self.col = 1
+                    elif char_at_cursor == '\t':
+                        self.col += 4
                     else:
                         self.col += 1
                     self.cursor += 1 
@@ -199,10 +207,14 @@ class Lexer:
             
             self.cursor = end_cursor
             
+            # --- METADATA UPDATE FIX ---
+            # We need to correctly increment column count for the characters INSIDE the token too
             for char in lexeme:
                 if char == '\n': 
                     self.line += 1
                     self.col = 1
+                elif char == '\t':
+                    self.col += 4
                 else: 
                     self.col += 1
 
