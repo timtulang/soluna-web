@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import re  
 from app.lexer.lexer import Lexer 
+from app.parser.parser import Parser  # <--- NEW IMPORT
 
 app = FastAPI()
 
@@ -18,13 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def run_lexer(code: str):
+def run_pipeline(code: str):
     """
-    Runs the lexer and fills in the gaps with WHITESPACE, TAB, or NEWLINE tokens.
+    Runs the Lexer -> Gap Filler -> Parser pipeline.
+    Returns: (final_tokens, all_errors, parse_tree_dict)
     """
+    # 1. Run Lexer
     lexer = Lexer(code)
-    tokens_from_lexer, errors = lexer.tokenize_all()
+    tokens_from_lexer, lexer_errors = lexer.tokenize_all()
 
+    # 2. Convert Lexer tuples to Dictionaries
     processed_tokens = []
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
@@ -37,31 +41,29 @@ def run_lexer(code: str):
             "col": meta['col']    
         })
 
+    # 3. Gap Filling (Whitespace, Tabs, Newlines)
+    # This logic preserves the visual structure for the frontend.
     final_tokens = []
     last_end = 0
-    
     current_line = 1
     current_col = 1
     
-    # --- UPDATED HELPER FUNCTION ---
     def emit_text(text, start_pos):
         nonlocal current_line, current_col
         
-        # FIX: Split by Newline OR 4-space blocks.
-        # This ensures that "        " becomes two separate "    " tokens.
+        # Split by Newline OR 4-space blocks.
         parts = re.split(r'(\n|    )', text)
         
         curr = start_pos
         for part in parts:
             if not part: continue
             
-            # Determine token type
             if part == '\n':
-                t_type = "NEWLINE"
+                t_type = "newline"
             elif part == "    ":
-                t_type = "TAB" # Now this will hit for every 4-space block
+                t_type = "tab" 
             else:
-                t_type = "WHITESPACE"
+                t_type = "whitespace"
             
             final_tokens.append({
                 "type": t_type,
@@ -72,7 +74,6 @@ def run_lexer(code: str):
                 "col": current_col
             })
             
-            # Update trackers
             curr += len(part)
             if part == '\n':
                 current_line += 1
@@ -82,13 +83,12 @@ def run_lexer(code: str):
 
     def process_gap(start, end):
         nonlocal current_line, current_col
-        
         if start >= end: return
 
         chunk_start = start
         
         relevant_errors = [
-            e for e in errors 
+            e for e in lexer_errors 
             if e.get('start', -1) < end and e.get('end', -1) > start
         ]
         relevant_errors.sort(key=lambda x: x['start'])
@@ -114,6 +114,7 @@ def run_lexer(code: str):
         if chunk_start < end:
             emit_text(code[chunk_start:end], chunk_start)
 
+    # Reconstruct the full token stream with gaps
     for token in processed_tokens:
         start_index = token["start"]
 
@@ -137,7 +138,22 @@ def run_lexer(code: str):
     if last_end < len(code):
         process_gap(last_end, len(code))
 
-    return final_tokens, errors
+    # 4. Run Parser
+    # We pass 'processed_tokens' (the logical tokens) NOT 'final_tokens' (which has whitespace)
+    # The Parser expects purely logical tokens.
+    parse_tree = None
+    parser_error = None
+    
+    if len(processed_tokens) > 0:
+        try:
+            parser = Parser(processed_tokens)
+            root = parser.parse()
+            parse_tree = root.to_dict()
+        except Exception as e:
+            # We treat parser errors as a string message for now
+            parser_error = str(e)
+
+    return final_tokens, lexer_errors, parse_tree, parser_error
 
 
 @app.websocket("/ws")
@@ -153,11 +169,25 @@ async def websocket_endpoint(websocket: WebSocket):
             except (json.JSONDecodeError, AttributeError):
                 code = data
 
-            tokens, errors = run_lexer(code)
+            # Run the full pipeline
+            tokens, errors, parse_tree, parser_err = run_pipeline(code)
+
+            # Append parser error to the error list if it exists
+            if parser_err:
+                errors.append({
+                    "type": "PARSER_ERROR",
+                    "message": parser_err,
+                    # We default to line 0 if specific location isn't extracted yet
+                    "line": 0, 
+                    "col": 0,
+                    "start": 0,
+                    "end": 0
+                })
 
             response_payload = {
                 "tokens": tokens,
-                "errors": errors
+                "errors": errors,
+                "parseTree": parse_tree
             }
 
             await websocket.send_text(json.dumps(response_payload))

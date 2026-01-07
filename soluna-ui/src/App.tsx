@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
-// ... [Keep your type definitions and tokenColors map exactly as they are] ...
+// --- Types ---
 
 type Token = {
   type: string;
@@ -17,12 +17,29 @@ type LexerError = {
   message: string;
   line: number;
   col: number;
+  start: number;
+  end: number;
+};
+
+type ParseNode = {
+  type: string;
+  value?: string;
+  children: ParseNode[];
 };
 
 type WsMessage = {
   tokens?: Token[];
   errors?: LexerError[];
+  parseTree?: ParseNode;
 };
+
+type CodeFile = {
+  id: string;
+  name: string;
+  content: string;
+};
+
+// --- Color Mapping ---
 
 const tokenColors: Record<string, string> = {
   // Literals & Identifiers
@@ -31,6 +48,7 @@ const tokenColors: Record<string, string> = {
   flux_lit: "#b5cea8",
   aster_lit: "#b5cea8", 
   id: "#dcdcaa", 
+  identifier: "#dcdcaa",
   selene_literal: "#ce9178", 
   blaze_literal: "#ce9178", 
   leo_label: "#4ec9b0", 
@@ -60,17 +78,75 @@ const getColor = (type: string): string => {
   return "#d4d4d4";
 };
 
-// --- Component ---
+// --- Recursive Tree Component ---
+
+const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth = 0 }) => {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.children && node.children.length > 0;
+  
+  const isLiteral = node.type === "Literal";
+  const isIdentifier = node.type === "Identifier";
+  const isProgram = node.type === "Program";
+  
+  const labelColor = isProgram ? "text-yellow-400" 
+    : isLiteral ? "text-green-300"
+    : isIdentifier ? "text-blue-300"
+    : "text-zinc-300";
+
+  return (
+    <div className="font-mono text-sm leading-relaxed select-none">
+      <div 
+        className={`flex items-center gap-2 py-0.5 hover:bg-white/5 rounded px-2 cursor-pointer transition-colors`}
+        style={{ paddingLeft: `${depth * 20 + 8}px` }}
+        onClick={() => setExpanded(!expanded)}
+      >
+        <span className={`w-4 h-4 flex items-center justify-center text-zinc-500 text-[10px] transform transition-transform ${expanded ? 'rotate-90' : ''}`}>
+          {hasChildren ? '▶' : '•'}
+        </span>
+        <span className={`font-semibold ${labelColor}`}>
+          {node.type}
+        </span>
+        {node.value && (
+          <span className="text-zinc-500 text-xs">
+             = <span className="text-[#ce9178]">"{node.value}"</span>
+          </span>
+        )}
+      </div>
+      {expanded && hasChildren && (
+        <div className="border-l border-zinc-800 ml-[15px] relative">
+          {node.children.map((child, i) => (
+            <TreeNode key={i} node={child} depth={depth + 1} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- Main App Component ---
+
 const App: React.FC = () => {
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
+  
+  // File System State
+  const [files, setFiles] = useState<CodeFile[]>([
+    { id: '1', name: 'main.sl', content: '' }
+  ]);
+  const [activeFileId, setActiveFileId] = useState<string>('1');
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+
+  // Analysis State
   const [tokens, setTokens] = useState<Token[]>([]);
-  const [raw, setRaw] = useState<string>("");
+  const [parseTree, setParseTree] = useState<ParseNode | null>(null);
   const [errors, setErrors] = useState<LexerError[]>([]);
+  const [activeTab, setActiveTab] = useState<'symbol' | 'tree'>('symbol');
+
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // We use this ref to manually set cursor position after a state update
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Derived active file
+  const activeFile = files.find(f => f.id === activeFileId) || files[0];
 
   useEffect(() => {
     let ws: WebSocket;
@@ -87,6 +163,11 @@ const App: React.FC = () => {
           const data: WsMessage = JSON.parse(ev.data);
           if (data.tokens) setTokens(data.tokens);
           if (data.errors) setErrors(data.errors);
+          if (data.parseTree) {
+             setParseTree(data.parseTree);
+          } else {
+             setParseTree(null);
+          }
         } catch (e) {
           console.error("Invalid message from server", e);
         }
@@ -109,14 +190,17 @@ const App: React.FC = () => {
     };
   }, []);
 
-  function sendCodeDebounced(code: string) {
+  // Send Code Trigger
+  function triggerAnalysis(code: string) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (sendTimer.current) clearTimeout(sendTimer.current);
+    
     sendTimer.current = setTimeout(() => {
       try {
         if (code.trim() === "") {
             setTokens([]);
             setErrors([]);
+            setParseTree(null);
         }
         wsRef.current?.send(JSON.stringify({ code }));
       } catch (e) {
@@ -124,34 +208,83 @@ const App: React.FC = () => {
       }
     }, 160);
   }
-  
-  function onEditorChange(e: ChangeEvent<HTMLTextAreaElement>) {
-    const code = e.target.value;
-    setRaw(code);
-    sendCodeDebounced(code);
+
+  // --- File Handlers ---
+
+  function handleCodeChange(e: ChangeEvent<HTMLTextAreaElement>) {
+    const newContent = e.target.value;
+    
+    setFiles(prev => prev.map(f => 
+      f.id === activeFileId ? { ...f, content: newContent } : f
+    ));
+    
+    triggerAnalysis(newContent);
   }
 
-  // --- NEW: Handle Tab Key ---
+  function handleAddFile() {
+    const newId = Date.now().toString();
+    const newFile: CodeFile = {
+      id: newId,
+      name: `script_${files.length}.sl`,
+      content: ''
+    };
+    setFiles([...files, newFile]);
+    setActiveFileId(newId);
+    triggerAnalysis('');
+    
+    // Auto-focus logic
+    setTimeout(() => {
+        if(textareaRef.current) textareaRef.current.focus();
+    }, 0);
+  }
+
+  function handleCloseFile(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    if (files.length === 1) {
+       // Don't close last file, just clear it
+       setFiles([{...files[0], content: ''}]);
+       triggerAnalysis('');
+       return;
+    }
+    
+    const newFiles = files.filter(f => f.id !== id);
+    setFiles(newFiles);
+    
+    if (activeFileId === id) {
+        const next = newFiles[0];
+        setActiveFileId(next.id);
+        triggerAnalysis(next.content);
+    }
+  }
+
+  function handleTabClick(id: string) {
+    setActiveFileId(id);
+    const file = files.find(f => f.id === id);
+    if(file) triggerAnalysis(file.content);
+  }
+  
+  function handleRename(id: string, newName: string) {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+    setRenamingId(null);
+  }
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Tab') {
-      e.preventDefault(); // Stop focus from moving
-      
+      e.preventDefault(); 
       const target = e.currentTarget;
       const start = target.selectionStart;
       const end = target.selectionEnd;
       const indent = "    "; 
       
-      const newValue = raw.substring(0, start) + indent + raw.substring(end);
+      const newContent = activeFile.content.substring(0, start) + indent + activeFile.content.substring(end);
       
-      setRaw(newValue);
-      sendCodeDebounced(newValue);
+      // Update file content
+      setFiles(prev => prev.map(f => 
+        f.id === activeFileId ? { ...f, content: newContent } : f
+      ));
+      
+      triggerAnalysis(newContent);
 
-      // Move the cursor to after the inserted spaces
-      // We need to use setTimeout or useLayoutEffect to ensure this runs after render,
-      // but in simple handlers, updating the ref immediately after often works 
-      // if React schedules the re-render efficiently. 
-      // However, the most reliable way in raw React without a layout effect 
-      // is usually scheduling it for the next tick.
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + indent.length;
@@ -174,7 +307,7 @@ const App: React.FC = () => {
                 <img src="src/assets/logo.png" alt="Soluna Logo" className="w-12 h-12"/>
                 <div className="ml-4">
                   <h1 className="text-xl font-bold text-yellow-400">Soluna</h1>
-                  <p className="text-zinc-400 text-sm mt-0.5">Lexical Analysis Table</p>
+                  <p className="text-zinc-400 text-sm mt-0.5">Lexical Analysis & Parsing</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-900/50 border border-zinc-700/50">
@@ -187,21 +320,68 @@ const App: React.FC = () => {
 
         {/* Main content */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Left column */}
+          
+          {/* Left column: Editor with Tabs */}
           <div className="space-y-6">
-            {/* Editor */}
-            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[400px]">
-              <div className="px-6 py-4 border-b border-zinc-800/50 flex items-center justify-between">
-                <h2 className="font-semibold text-zinc-200">Source Code</h2>
-                {raw && <span className="text-xs text-zinc-400">{raw.length} chars</span>}
+            <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
+              
+              {/* File Tabs Header */}
+              <div className="flex items-center bg-zinc-950/50 border-b border-zinc-800/50 overflow-x-auto scrollbar-hide">
+                 {files.map(file => (
+                   <div 
+                     key={file.id}
+                     onClick={() => handleTabClick(file.id)}
+                     onDoubleClick={() => setRenamingId(file.id)}
+                     className={`
+                       group flex items-center gap-2 px-4 py-3 text-xs font-medium cursor-pointer border-r border-zinc-800/50 min-w-[120px] max-w-[200px] select-none
+                       ${activeFileId === file.id ? 'bg-zinc-900/60 text-yellow-400 border-b-2 border-b-yellow-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'}
+                     `}
+                   >
+                     {/* File Icon */}
+                     <span className="opacity-70">📄</span>
+                     
+                     {/* Name or Rename Input */}
+                     {renamingId === file.id ? (
+                        <input 
+                          autoFocus
+                          className="bg-transparent text-white outline-none w-full"
+                          defaultValue={file.name}
+                          onBlur={(e) => handleRename(file.id, e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleRename(file.id, e.currentTarget.value)}
+                        />
+                     ) : (
+                        <span className="truncate flex-1">{file.name}</span>
+                     )}
+                     
+                     {/* Close Button */}
+                     <button 
+                       onClick={(e) => handleCloseFile(e, file.id)}
+                       className={`
+                         w-5 h-5 rounded hover:bg-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
+                         ${files.length === 1 ? 'hidden' : ''}
+                       `}
+                     >
+                       ×
+                     </button>
+                   </div>
+                 ))}
+                 
+                 {/* Add File Button */}
+                 <button 
+                   onClick={handleAddFile}
+                   className="px-3 py-3 text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/30 transition-colors"
+                   title="New File"
+                 >
+                   +
+                 </button>
               </div>
               
               <textarea
-                ref={textareaRef} // Attach Ref here
-                value={raw}
-                onChange={onEditorChange}
-                onKeyDown={handleKeyDown} // Attach Key Handler here
-                placeholder="// Start typing your code here..."
+                ref={textareaRef}
+                value={activeFile.content}
+                onChange={handleCodeChange}
+                onKeyDown={handleKeyDown}
+                placeholder={`// Start coding in ${activeFile.name}...`}
                 className="w-full flex-1 p-6 bg-transparent text-zinc-100 font-mono text-sm resize-none focus:outline-none placeholder-zinc-600 leading-relaxed"
                 spellCheck="false"
               />
@@ -213,7 +393,7 @@ const App: React.FC = () => {
                     <div key={i} className="p-4 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-3">
                       <div className="flex-1">
                         <p className="text-red-300 font-medium text-sm">{err.message}</p>
-                        <p className="text-red-400/70 text-xs mt-1">Line {err.line}, Column {err.col}</p>
+                        {err.line > 0 && <p className="text-red-400/70 text-xs mt-1">Line {err.line}, Column {err.col}</p>}
                       </div>
                     </div>
                   ))}
@@ -221,44 +401,85 @@ const App: React.FC = () => {
               )}
           </div>
 
-          {/* Right column: Token Table */}
+          {/* Right column: Output Tabs */}
           <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[800px]">
-            <div className="px-6 py-4 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
-              <h2 className="font-semibold text-zinc-200">Symbol Table</h2>
+            
+            <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
+              <div className="flex space-x-1 bg-zinc-950/50 p-1 rounded-lg">
+                 <button
+                   onClick={() => setActiveTab('symbol')}
+                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+                     activeTab === 'symbol' 
+                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
+                       : 'text-zinc-500 hover:text-zinc-300'
+                   }`}
+                 >
+                   Lexer
+                 </button>
+                 <button
+                   onClick={() => setActiveTab('tree')}
+                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+                     activeTab === 'tree' 
+                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
+                       : 'text-zinc-500 hover:text-zinc-300'
+                   }`}
+                 >
+                   Parse Tree
+                 </button>
+              </div>
+
               {tokens.length > 0 && (
-                <span className="px-2.5 py-1 bg-yellow-400/20 text-yellow-300 text-xs font-semibold rounded-full">
-                  {tokens.length} Entries
+                <span className="mr-4 px-2.5 py-1 bg-yellow-400/10 text-yellow-500/80 text-[10px] font-semibold rounded-full border border-yellow-400/10">
+                  {activeTab === 'symbol' ? `${tokens.length} TOKENS` : parseTree ? 'TREE BUILT' : 'NO TREE'}
                 </span>
               )}
             </div>
             
             <div className="flex-1 overflow-auto">
-              {tokens.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                  <p className="text-sm font-medium">Waiting for input...</p>
-                </div>
-              ) : (
-                <table className="w-full text-left border-collapse font-mono text-xs sm:text-sm">
-                  <thead className="bg-zinc-950/80 sticky top-0 z-10 text-zinc-400 uppercase tracking-wider text-xs">
-                    <tr>
-                      <th className="px-4 py-3 font-medium border-b border-zinc-800 w-16">Row</th>
-                      <th className="px-4 py-3 font-medium border-b border-zinc-800 w-16">Col</th>
-                      <th className="px-4 py-3 font-medium border-b border-zinc-800">Lexeme</th>
-                      <th className="px-4 py-3 font-medium border-b border-zinc-800">Token</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800/50">
-                    {tokens.map((t, i) => (
-                      <tr key={i} className="hover:bg-zinc-800/30 transition-colors group">
-                        <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.line}</td>
-                        <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.col}</td>
-                        <td className="px-4 py-1 text-zinc-300 break-all">{t.value}</td>
-                        <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>{t.type}</td>
+              {activeTab === 'symbol' && (
+                 tokens.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-zinc-500">
+                    <p className="text-sm font-medium">Waiting for input...</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left border-collapse font-mono text-xs sm:text-sm">
+                    <thead className="bg-zinc-950/80 sticky top-0 z-10 text-zinc-400 uppercase tracking-wider text-xs">
+                      <tr>
+                        <th className="px-4 py-3 font-medium border-b border-zinc-800 w-16">Row</th>
+                        <th className="px-4 py-3 font-medium border-b border-zinc-800 w-16">Col</th>
+                        <th className="px-4 py-3 font-medium border-b border-zinc-800">Lexeme</th>
+                        <th className="px-4 py-3 font-medium border-b border-zinc-800">Token</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/50">
+                      {tokens.map((t, i) => (
+                        <tr key={i} className="hover:bg-zinc-800/30 transition-colors group">
+                          <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.line}</td>
+                          <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.col}</td>
+                          <td className="px-4 py-1 text-zinc-300 break-all">{t.value}</td>
+                          <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>{t.type}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )
               )}
+
+              {activeTab === 'tree' && (
+                <div className="p-4">
+                  {parseTree ? (
+                     <div className="pl-2 pt-2">
+                       <TreeNode node={parseTree} />
+                     </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-500 mt-20">
+                      <p className="text-sm font-medium">No valid parse tree available.</p>
+                      <p className="text-xs text-zinc-600 mt-2">Ensure your code has no syntax errors.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
             </div>
           </div>
         </div>
