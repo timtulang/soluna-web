@@ -299,10 +299,7 @@ STATES = {
     # Multi-line
     318: State('*', [319]), 
     319: State(REGDEF['ascii_309'], [319, 320]), # Body
-    320: State('*', [3150, 320, 321]), # Saw * (3150 is special safe return, assumed constant or handled internally)
-    # Note: If 3150 is a real state ID in your system, it likely needs shifting too. 
-    # But since it wasn't defined in the MAIN STATES dict you pasted, I kept it as reference. 
-    # If 3150 IS a key, it should be 3155. I will assume it's a "virtual" or previously defined constant.
+    320: State('*', [315, 320, 321]),
     321: State('\\', [322]),
     322: State(REGDEF['free_delim'], end = True), 
     

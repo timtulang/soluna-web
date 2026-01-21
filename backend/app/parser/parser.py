@@ -13,7 +13,7 @@ class ParseNode:
 
 class Parser:
     def __init__(self, tokens):
-        self.tokens = [t for t in tokens if t['type'] not in ('WHITESPACE', 'TAB', 'NEWLINE', 'comment')]
+        self.tokens = [t for t in tokens if t['type'] not in ('whitespace', 'tab', 'newline', 'comment')]
         self.cursor = 0
 
     def current_token(self):
@@ -46,7 +46,6 @@ class Parser:
     # =========================================================================
 
     def parse(self):
-        """Rule 1: <program> -> <global-dec> <func-dec> <statements>"""
         return ParseNode("Program", children=[
             self.parse_global_dec(),
             self.parse_func_dec(),
@@ -57,37 +56,32 @@ class Parser:
 
     def parse_global_dec(self):
         children = []
-        # Rules 2-5: Global declarations
         declaration_starters = {
             'zeta', 'kai', 'aster', 'flux', 'selene', 'blaze', 'lani', 'let', 'hubble', 'void'
         }
         
         while self.current_token() and self.current_token()['type'] in declaration_starters:
-            # Lookahead logic to distinguish Global Vars vs Functions
             ct = self.current_token()
             nt = self.peek_token()
             nnt = self.peek_token(2)
 
             is_func = False
-            # Check if this looks like a function definition: <type> <id> (
             if ct['type'] in declaration_starters:
                 if nt and nt['type'] == 'identifier' and nnt and nnt['type'] == '(':
                     is_func = True
             
             if is_func:
-                break # Stop global parsing, hand over to parse_func_dec
+                break 
 
             children.append(self.parse_dec_and_init())
         
         return ParseNode("GlobalDeclarations", children=children)
 
     def parse_func_dec(self):
-        """Rules 30-33: Function Declarations"""
         children = []
         func_starters = {'void', 'kai', 'aster', 'flux', 'selene', 'blaze', 'lani', 'let'}
         
         while self.current_token() and self.current_token()['type'] in func_starters:
-            # Double check it is a function
             nt = self.peek_token()
             nnt = self.peek_token(2)
             if nt and nt['type'] == 'identifier' and nnt and nnt['type'] == '(':
@@ -98,7 +92,6 @@ class Parser:
         return ParseNode("FunctionDeclarations", children=children)
 
     def parse_dec_and_init(self):
-        """Rule 6-8: <dec-and-init>"""
         token = self.current_token()
 
         if token['type'] == 'hubble':
@@ -110,23 +103,14 @@ class Parser:
         return self.parse_var_dec()
 
     def parse_var_dec(self):
-        """Rule 9: <var-dec> -> <mutability> <data-type> <var-init>"""
         children = []
-        
-        # Rule 10: <mutability> -> zeta
         if self.current_token()['type'] == 'zeta':
             children.append(ParseNode("Mutability", value=self.eat('zeta')['value']))
-        
-        # Rule 12+: <data-type>
         children.append(self.parse_data_type())
-        
-        # Rule 19: <var-init>
         children.append(self.parse_var_init())
-        
         return ParseNode("VariableDeclaration", children=children)
 
     def parse_data_type(self):
-        """Rules 12-18: <data-type>"""
         valid_types = ['kai', 'aster', 'flux', 'selene', 'blaze', 'lani', 'let']
         token = self.current_token()
         if token['type'] in valid_types:
@@ -134,79 +118,51 @@ class Parser:
         raise Exception(f"Expected data type, got {token['type']}")
 
     def parse_func_data_type(self):
-        """
-        Rule 52: <func-data-type> -> <data-type>
-        Rule 53: <func-data-type> -> void
-        """
         token = self.current_token()
-        
         if token['type'] == 'void':
             return ParseNode("FuncDataType", value=self.eat('void')['value'])
-        
-        # If not void, it must be a standard data type
-        # We wrap it in a FuncDataType node to preserve the grammar structure
         return ParseNode("FuncDataType", children=[self.parse_data_type()])
 
     def parse_var_init(self):
-        """Rule 19: identifier <multi-identifiers> <value-init>;"""
         children = []
-        
-        # 1. Parse Identifiers (left side)
-        # First ID
         children.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
         
-        # Additional IDs (Rule 20: , identifier ...)
         while self.current_token() and self.current_token()['type'] == ',':
             self.eat(',')
             children.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
         
-        # 2. Parse Values (right side)
-        # Rule 22: = <value> <value-init-tail>
         if self.current_token()['type'] == '=':
             self.eat('=')
-            
-            # First Value
             val_children = [self.parse_value()]
-            
-            # Additional Values (Rule 24: , <value> ...)
             while self.current_token() and self.current_token()['type'] == ',':
                 self.eat(',')
                 val_children.append(self.parse_value())
-                
             children.append(ParseNode("Values", children=val_children))
             
         self.eat(';')
         return ParseNode("VarInitialization", children=children)
 
     def parse_table_dec(self):
-        """Rule 95: hubble <data-type> identifier = { elements };"""
         self.eat('hubble')
         dtype = self.parse_data_type()
         ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
         self.eat('=')
         self.eat('{')
-        
         elements = []
         if self.current_token()['type'] != '}':
             elements.append(self.parse_expression()) 
             while self.current_token()['type'] == ',':
                 self.eat(',')
                 elements.append(self.parse_expression())
-        
         self.eat('}')
         self.eat(';')
-        
         return ParseNode("TableDeclaration", children=[dtype, ident, ParseNode("Elements", children=elements)])
 
     # --- Functions ---
 
     def parse_func_def(self):
-        """Rule 51: <func-data-type> identifier (<func-params>) <statements> <func-return> mos"""
         children = []
-        
-        # UPDATED: Use the specific rule for function return types
         children.append(self.parse_func_data_type())
-
         children.append(ParseNode("FuncName", value=self.eat('identifier')['value']))
         
         self.eat('(')
@@ -226,13 +182,11 @@ class Parser:
         return ParseNode("FunctionDefinition", children=children)
 
     def parse_param(self):
-        """Rule 60: <data-type> identifier"""
         dtype = self.parse_data_type()
         ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
         return ParseNode("Param", children=[dtype, ident])
 
     def parse_func_return(self):
-        """Rule 54: zara <return-val>;"""
         self.eat('zara')
         val = None
         if self.current_token()['type'] != ';':
@@ -245,17 +199,13 @@ class Parser:
     def parse_statements(self):
         stmts = []
         block_enders = {'mos', 'wane', 'cos'}
-        
         while self.current_token():
             tok = self.current_token()
             if tok['type'] in block_enders:
                 break
-            
             if tok['type'] == 'zara':
                 break 
-
             stmts.append(self.parse_single_statement())
-            
         return ParseNode("Block", children=stmts)
 
     def parse_single_statement(self):
@@ -271,30 +221,44 @@ class Parser:
         elif t_type == 'wax':
             return self.parse_repeat_loop()
         elif t_type == 'lumina':
-            return self.parse_input()
+            node = self.parse_input_expression()
+            if self.current_token() and self.current_token()['type'] == ';':
+                self.eat(';')
+            return ParseNode("ExpressionStatement", children=[node])
         elif t_type in ['nova', 'lumen']:
             return self.parse_output()
         elif t_type == 'leo':
             return self.parse_goto()
-        
         elif t_type == 'local':
             self.eat('local')
-            # Rule 50: <statements> -> local <dec-and-init>
-            # We wrap the result in a "LocalDeclaration" node to preserve scope info
             declaration_node = self.parse_dec_and_init()
             return ParseNode("LocalDeclaration", children=[declaration_node])
-            
         elif t_type == ';':
             self.eat(';')
             return ParseNode("EmptyStatement")
+            
         elif t_type == 'identifier':
             next_t = self.peek_token()
+            
+            # Function Call: id(...)
             if next_t and next_t['type'] == '(':
                 return self.parse_func_call_stmt()
-            elif next_t and next_t['type'] == ':':
-                 pass
-            return self.parse_assignment_statement()
+                
+            # FIX: Check for Postfix Unary Start (i++ ...)
+            # We defer to parse_expression so it can handle "i++ + 5;"
+            elif next_t and next_t['value'] in ['++', '--']:
+                expr = self.parse_expression()
+                self.eat(';')
+                return ParseNode("ExpressionStatement", children=[expr])
             
+            return self.parse_assignment_statement()
+        
+        # Prefix Unary as statement: ++id;
+        elif t_type in ['!', 'not'] or tok['value'] in ['++', '--']:
+             expr = self.parse_expression()
+             self.eat(';')
+             return ParseNode("ExpressionStatement", children=[expr])
+
         if t_type in ['zeta', 'kai', 'aster', 'flux', 'selene', 'blaze', 'lani', 'let', 'hubble']:
              return self.parse_dec_and_init()
 
@@ -323,7 +287,6 @@ class Parser:
                 self.eat('mos')
                 children.append(ParseNode("Else", children=[else_block]))
                 break
-                
         return ParseNode("IfStatement", children=children)
 
     def parse_while_loop(self):
@@ -341,11 +304,9 @@ class Parser:
         limit = self.parse_expression()
         self.eat(',')
         step = self.parse_expression()
-        
         self.eat('cos')
         body = self.parse_statements()
         self.eat('mos')
-        
         return ParseNode("ForLoop", children=[start, limit, step, body])
 
     def parse_repeat_loop(self):
@@ -357,7 +318,7 @@ class Parser:
 
     # --- I/O ---
 
-    def parse_input(self):
+    def parse_input_expression(self):
         self.eat('lumina')
         self.eat('(')
         args = []
@@ -367,7 +328,7 @@ class Parser:
                 self.eat(',')
                 args.append(ParseNode("Arg", value=self.eat(self.current_token()['type'])['value']))
         self.eat(')')
-        return ParseNode("Input", children=args)
+        return ParseNode("InputExpression", children=args)
 
     def parse_output(self):
         out_type = self.current_token()['type']
@@ -386,33 +347,22 @@ class Parser:
     # --- Expressions & Assignments ---
 
     def parse_assignment_statement(self):
-        """
-        Handles two distinct rules that start with identifier:
-        1. Rule 27: identifier <multi-identifiers> <assignment-value> ;
-           (e.g., a, b = 1, 2;)
-        2. Rule 28/101: <table-nav> -> identifier [index] = expression ;
-           (e.g., arr[0] = 5;)
-        """
         start_token = self.eat('identifier')
         first_id = ParseNode("Identifier", value=start_token['value'])
 
-        # --- PATH A: Table Assignment (Rule 28) ---
+        # Path A: Table Assignment
         if self.current_token()['type'] == '[':
             target = first_id
-            # Handle nested access: arr[x][y]
             while self.current_token()['type'] == '[':
                 self.eat('[')
                 idx = self.parse_expression()
                 self.eat(']')
                 target = ParseNode("TableAccess", children=[target, idx])
             
-            # Rule 101 strictly specifies '='
             op = '='
             if self.current_token()['value'] == '=':
                 self.eat('=')
             else:
-                # Fallback for +=, -= if you want to support them loosely, 
-                # but strict grammar says <table-nav> only has '='.
                 op = self.current_token()['value']
                 valid_ops = ['=', '-=', '+=', '*=', '/=', '%=']
                 if op in valid_ops:
@@ -424,15 +374,12 @@ class Parser:
             self.eat(';')
             return ParseNode("Assignment", value=op, children=[target, val])
 
-        # --- PATH B: Variable Assignment (Rule 27) ---
+        # Path B: Variable Assignment
         targets = [first_id]
-        
-        # Parse extra identifiers: a, b, c ...
         while self.current_token()['type'] == ',':
             self.eat(',')
             targets.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
 
-        # Assignment Operator
         op = self.current_token()['value']
         valid_ops = ['=', '-=', '+=', '*=', '/=', '%=']
         if op in valid_ops:
@@ -440,18 +387,13 @@ class Parser:
         else:
              raise Exception(f"Expected assignment operator, got {op}")
 
-        # Parse Values
-        # Rule 29: <assignment-value> -> <op> <value> <value-init-tail>
         values = []
-        values.append(self.parse_expression()) # First value
-        
-        # Parse tail values: , 10, 20 ...
+        values.append(self.parse_expression()) 
         while self.current_token()['type'] == ',':
             self.eat(',')
             values.append(self.parse_expression())
 
         self.eat(';')
-        
         return ParseNode("Assignment", value=op, children=[
             ParseNode("Targets", children=targets),
             ParseNode("Values", children=values)
@@ -488,14 +430,19 @@ class Parser:
         return left
 
     def parse_expr_factor(self):
-        if self.current_token()['type'] in ['!', 'not']:
-            op = self.eat(self.current_token()['type'])['value']
+        tok = self.current_token()
+        if tok['type'] in ['!', 'not'] or tok['value'] in ['++', '--']:
+            op = tok['value']
+            self.eat(tok['type'])
             return ParseNode("UnaryExpr", value=op, children=[self.parse_expr_factor()])
         return self.parse_factor_value()
 
     def parse_factor_value(self):
         tok = self.current_token()
         t_type = tok['type']
+
+        if t_type == 'lumina':
+            return self.parse_input_expression()
 
         if t_type == 'identifier':
             nt = self.peek_token()
@@ -507,6 +454,13 @@ class Parser:
                 idx = self.parse_expression()
                 self.eat(']')
                 return ParseNode("TableAccess", children=[ident, idx])
+            
+            # Postfix check inside expression (e.g. x = i++ + 1)
+            if nt and nt['value'] in ['++', '--']:
+                ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
+                op = self.eat(self.current_token()['type'])['value']
+                return ParseNode("UnaryExpr", value="postfix " + op, children=[ident])
+
             return ParseNode("Identifier", value=self.eat('identifier')['value'])
 
         elif t_type in ['int', 'float', 'double', 'char', 'string', 'iris', 'sage']:
@@ -524,4 +478,4 @@ class Parser:
         return self.parse_expression()
 
     def get_general_ops(self):
-        return ['+', '-', '*', '/', '//', '%', '^', '&&', 'and', 'or', '!=', '>', '<', '<=', '>=', '==']
+        return ['+', '-', '*', '/', '//', '%', '^', '&&', 'and', 'or', '!=', '>', '<', '<=', '>=', '==', '..']

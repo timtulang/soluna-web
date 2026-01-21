@@ -1,7 +1,3 @@
-#
-# lexer.py
-#
-
 import sys
 from .td import STATES, ID_END_STATES 
 from .token import tokenize        
@@ -207,8 +203,6 @@ class Lexer:
             
             self.cursor = end_cursor
             
-            # --- METADATA UPDATE FIX ---
-            # We need to correctly increment column count for the characters INSIDE the token too
             for char in lexeme:
                 if char == '\n': 
                     self.line += 1
