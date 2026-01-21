@@ -1,3 +1,5 @@
+# app/parser/parser.py
+
 class ParseNode:
     def __init__(self, node_type, value=None, children=None):
         self.type = node_type
@@ -13,6 +15,7 @@ class ParseNode:
 
 class Parser:
     def __init__(self, tokens):
+        # Filter whitespace/comments
         self.tokens = [t for t in tokens if t['type'] not in ('whitespace', 'tab', 'newline', 'comment')]
         self.cursor = 0
 
@@ -66,6 +69,7 @@ class Parser:
             nnt = self.peek_token(2)
 
             is_func = False
+            # Check for function definition pattern: type identifier (
             if ct['type'] in declaration_starters:
                 if nt and nt['type'] == 'identifier' and nnt and nnt['type'] == '(':
                     is_func = True
@@ -244,8 +248,7 @@ class Parser:
             if next_t and next_t['type'] == '(':
                 return self.parse_func_call_stmt()
                 
-            # FIX: Check for Postfix Unary Start (i++ ...)
-            # We defer to parse_expression so it can handle "i++ + 5;"
+            # Postfix Unary Start (i++ ...) handled via expression parsing
             elif next_t and next_t['value'] in ['++', '--']:
                 expr = self.parse_expression()
                 self.eat(';')
@@ -298,16 +301,38 @@ class Parser:
         return ParseNode("WhileLoop", children=[cond, body])
 
     def parse_for_loop(self):
+        """
+        Rule 141: phase <for-loop-params> cos <statements> mos
+        Rule 155: <for-loop-params> -> <for_start> <for_limit> <for_step>
+        Rule 157: <for_start> -> kai identifier = <expr-factor>
+        """
         self.eat('phase')
-        start = self.parse_expression()
+        
+        # --- Start Clause (Strict Rule 157) ---
+        self.eat('kai') # Enforce 'kai'
+        id_token = self.eat('identifier')
+        self.eat('=')
+        init_val = self.parse_expression() # Parses the value
+        
+        start_node = ParseNode("ForInit", children=[
+            ParseNode("DataType", value="kai"),
+            ParseNode("Identifier", value=id_token['value']),
+            init_val
+        ])
+        
+        # --- Limit Clause ---
         self.eat(',')
         limit = self.parse_expression()
+        
+        # --- Step Clause ---
         self.eat(',')
         step = self.parse_expression()
+        
         self.eat('cos')
         body = self.parse_statements()
         self.eat('mos')
-        return ParseNode("ForLoop", children=[start, limit, step, body])
+        
+        return ParseNode("ForLoop", children=[start_node, limit, step, body])
 
     def parse_repeat_loop(self):
         self.eat('wax')
