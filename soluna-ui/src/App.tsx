@@ -139,7 +139,9 @@ const App: React.FC = () => {
     let ws: WebSocket;
     function connect() {
       setWsStatus("CONNECTING");
-      ws = new WebSocket("ws://localhost:8000/ws");
+      // Use the environment variable if available, otherwise fallback to localhost
+      const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+      ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.addEventListener("open", () => setWsStatus("CONNECTED"));
