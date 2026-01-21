@@ -158,14 +158,68 @@ class Parser:
         self.eat('=')
         self.eat('{')
         elements = []
+        
         if self.current_token()['type'] != '}':
-            elements.append(self.parse_expression()) 
+            elements.append(self.parse_hubble_element()) 
             while self.current_token()['type'] == ',':
                 self.eat(',')
-                elements.append(self.parse_expression())
+                elements.append(self.parse_hubble_element())
+        
         self.eat('}')
         self.eat(';')
         return ParseNode("TableDeclaration", children=[dtype, ident, ParseNode("Elements", children=elements)])
+
+    def parse_hubble_element(self):
+        """
+        Parses a single element inside a Hubble table.
+        Possibilities:
+        1. Nested Table: { ... }
+        2. Function Definition: void func() ... mos
+        3. Variable Declaration: kai x = 1;
+        4. Expression: 5, x, func()
+        """
+        tok = self.current_token()
+        
+        # 1. Nested Table
+        if tok['type'] == '{':
+            self.eat('{')
+            nested_elements = []
+            if self.current_token()['type'] != '}':
+                nested_elements.append(self.parse_hubble_element())
+                while self.current_token()['type'] == ',':
+                    self.eat(',')
+                    nested_elements.append(self.parse_hubble_element())
+            self.eat('}')
+            return ParseNode("NestedTable", children=nested_elements)
+        
+        # Check for start of Function or Variable Declaration
+        potential_keywords = {'void', 'zeta', 'kai', 'aster', 'flux', 'selene', 'blaze', 'lani', 'let'}
+        
+        if tok['type'] in potential_keywords:
+            # Lookahead to distinguish Function vs Variable
+            # Pattern: <type> <id> (  --> Function
+            # Pattern: <type> <id> =  --> Variable
+            
+            is_func = False
+            
+            if tok['type'] == 'void':
+                is_func = True # variables can't be void
+            elif tok['type'] != 'zeta':
+                # Check next tokens
+                nt = self.peek_token(1)
+                nnt = self.peek_token(2)
+                if nt and nt['type'] == 'identifier' and nnt and nnt['type'] == '(':
+                    is_func = True
+            
+            if is_func:
+                # 2. Function Definition
+                return self.parse_func_def()
+            else:
+                # 3. Variable Declaration
+                return self.parse_var_dec()
+        
+        # 4. Expression
+        return self.parse_expression()
 
     # --- Functions ---
 
@@ -185,8 +239,6 @@ class Parser:
         children.append(ParseNode("Parameters", children=params))
         self.eat(')')
         
-        # FIX: Tell parse_statements to STOP at 'zara' because 
-        # func definition requires a mandatory explicit return at the end.
         children.append(self.parse_statements(stop_at_zara=True))
         children.append(self.parse_func_return())
         
@@ -210,11 +262,6 @@ class Parser:
     # --- Statements ---
 
     def parse_statements(self, stop_at_zara=False):
-        """
-        Parses a block of statements.
-        stop_at_zara: If True, stops parsing when 'zara' is found (used for function bodies).
-                      If False (default), parses 'zara' as a statement (used for ifs/loops).
-        """
         stmts = []
         block_enders = {'mos', 'wane', 'cos'}
         
@@ -223,7 +270,6 @@ class Parser:
             if tok['type'] in block_enders:
                 break
             
-            # FIX: Only stop at zara if explicitly requested (by parse_func_def)
             if stop_at_zara and tok['type'] == 'zara':
                 break 
                 
@@ -244,7 +290,6 @@ class Parser:
         elif t_type == 'wax':
             return self.parse_repeat_loop()
         
-        # --- FIX: Handle zara (return) as a statement inside blocks ---
         elif t_type == 'zara':
             return self.parse_func_return()
 
@@ -298,7 +343,7 @@ class Parser:
     def parse_conditional(self):
         self.eat('sol')
         cond = self.parse_expression()
-        true_block = self.parse_statements() # Default: stop_at_zara=False
+        true_block = self.parse_statements()
         self.eat('mos')
         
         children = [ParseNode("Condition", children=[cond]), ParseNode("TrueBlock", children=[true_block])]
@@ -405,6 +450,11 @@ class Parser:
                 self.eat(']')
                 target = ParseNode("TableAccess", children=[target, idx])
             
+            if self.current_token()['value'] in ['++', '--']:
+                op = self.eat(self.current_token()['type'])['value']
+                self.eat(';')
+                return ParseNode("UnaryStatement", value="postfix", children=[target, ParseNode("Operator", value=op)])
+
             op = '='
             if self.current_token()['value'] == '=':
                 self.eat('=')
@@ -501,7 +551,20 @@ class Parser:
                 self.eat('[')
                 idx = self.parse_expression()
                 self.eat(']')
-                return ParseNode("TableAccess", children=[ident, idx])
+                node = ParseNode("TableAccess", children=[ident, idx])
+                
+                # Handle multidimensional array and postfix in expressions
+                while self.current_token()['type'] == '[':
+                    self.eat('[')
+                    idx = self.parse_expression()
+                    self.eat(']')
+                    node = ParseNode("TableAccess", children=[node, idx])
+                
+                if self.current_token()['value'] in ['++', '--']:
+                    op = self.eat(self.current_token()['type'])['value']
+                    return ParseNode("UnaryExpr", value="postfix " + op, children=[node])
+                
+                return node
             
             if nt and nt['value'] in ['++', '--']:
                 tok = self.eat('identifier')
