@@ -185,7 +185,9 @@ class Parser:
         children.append(ParseNode("Parameters", children=params))
         self.eat(')')
         
-        children.append(self.parse_statements())
+        # FIX: Tell parse_statements to STOP at 'zara' because 
+        # func definition requires a mandatory explicit return at the end.
+        children.append(self.parse_statements(stop_at_zara=True))
         children.append(self.parse_func_return())
         
         self.eat('mos') 
@@ -207,16 +209,26 @@ class Parser:
 
     # --- Statements ---
 
-    def parse_statements(self):
+    def parse_statements(self, stop_at_zara=False):
+        """
+        Parses a block of statements.
+        stop_at_zara: If True, stops parsing when 'zara' is found (used for function bodies).
+                      If False (default), parses 'zara' as a statement (used for ifs/loops).
+        """
         stmts = []
         block_enders = {'mos', 'wane', 'cos'}
+        
         while self.current_token():
             tok = self.current_token()
             if tok['type'] in block_enders:
                 break
-            if tok['type'] == 'zara':
+            
+            # FIX: Only stop at zara if explicitly requested (by parse_func_def)
+            if stop_at_zara and tok['type'] == 'zara':
                 break 
+                
             stmts.append(self.parse_single_statement())
+            
         return ParseNode("Block", children=stmts)
 
     def parse_single_statement(self):
@@ -232,7 +244,10 @@ class Parser:
         elif t_type == 'wax':
             return self.parse_repeat_loop()
         
-        # --- NEW: Warp Statement (Break) ---
+        # --- FIX: Handle zara (return) as a statement inside blocks ---
+        elif t_type == 'zara':
+            return self.parse_func_return()
+
         elif t_type == 'warp':
             self.eat('warp')
             self.eat(';')
@@ -283,7 +298,7 @@ class Parser:
     def parse_conditional(self):
         self.eat('sol')
         cond = self.parse_expression()
-        true_block = self.parse_statements()
+        true_block = self.parse_statements() # Default: stop_at_zara=False
         self.eat('mos')
         
         children = [ParseNode("Condition", children=[cond]), ParseNode("TrueBlock", children=[true_block])]
@@ -512,4 +527,4 @@ class Parser:
         return self.parse_expression()
 
     def get_general_ops(self):
-        return ['+', '-', '*', '/', '//', '%', '^', '&&', 'and', 'or', '!=', '>', '<', '<=', '>=', '==', '..']
+        return ['+', '-', '*', '/', '//', '%', '^', '&&', 'and', '||' ,'or', '!=', '>', '<', '<=', '>=', '==', '..']
