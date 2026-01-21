@@ -6,24 +6,60 @@ import type { ChangeEvent, KeyboardEvent } from "react";
 type Token = {
   type: string;
   value: string;
-  alias?: string; // <--- NEW FIELD
+  alias?: string; // <--- Added for Identifier Iteration
   line: number;
   col: number;
   start: number;
   end: number;
 };
 
-// ... [Keep LexerError, ParseNode, WsMessage types same as before] ...
-type LexerError = { type: string; message: string; line: number; col: number; start: number; end: number; };
-type ParseNode = { type: string; value?: string; children: ParseNode[]; };
-type WsMessage = { tokens?: Token[]; errors?: LexerError[]; parseTree?: ParseNode; };
-type CodeFile = { id: string; name: string; content: string; };
+type LexerError = {
+  type: string;
+  message: string;
+  line: number;
+  col: number;
+  start: number;
+  end: number;
+};
 
-// ... [Keep tokenColors and getColor same as before] ...
+type ParseNode = {
+  type: string;
+  value?: string;
+  children: ParseNode[];
+};
+
+type WsMessage = {
+  tokens?: Token[];
+  errors?: LexerError[];
+  parseTree?: ParseNode;
+};
+
+type CodeFile = {
+  id: string;
+  name: string;
+  content: string;
+};
+
+// --- Color Mapping ---
+
 const tokenColors: Record<string, string> = {
-  comment: "#6a9955", kai_lit: "#b5cea8", flux_lit: "#b5cea8", aster_lit: "#b5cea8", 
-  id: "#dcdcaa", identifier: "#dcdcaa", selene_literal: "#ce9178", blaze_literal: "#ce9178", 
-  leo_label: "#4ec9b0", whitespace: "#ffffff", newline: "#ffffff", tab: "#ffffff",
+  // Literals & Identifiers
+  comment: "#6a9955", 
+  kai_lit: "#b5cea8", 
+  flux_lit: "#b5cea8",
+  aster_lit: "#b5cea8", 
+  id: "#dcdcaa", 
+  identifier: "#dcdcaa",
+  selene_literal: "#ce9178", 
+  blaze_literal: "#ce9178", 
+  leo_label: "#4ec9b0", 
+  
+  // Whitespace
+  whitespace: "#ffffff",
+  newline: "#ffffff",
+  tab: "#ffffff",
+  
+  // Keywords
   and: "#c586c0", aster: "#c586c0", blaze: "#c586c0", cos: "#c586c0", flux: "#c586c0", 
   hubble: "#c586c0", iris: "#c586c0", ixion: "#c586c0", kai: "#c586c0", lani: "#c586c0", 
   leo: "#c586c0", let: "#c586c0", lumen: "#c586c0", lumina: "#c586c0", luna: "#c586c0", 
@@ -31,7 +67,10 @@ const tokenColors: Record<string, string> = {
   phase: "#c586c0", sage: "#c586c0", selene: "#c586c0", sol: "#c586c0", soluna: "#c586c0", 
   star: "#c586c0", void: "#c586c0", wane: "#c586c0", warp: "#c586c0", wax: "#c586c0", 
   zara: "#c586c0", zeru: "#c586c0", zeta: "#c586c0",
-  unknown: "#f44747", default_symbol: "#569cd6", 
+  
+  // Fallbacks
+  unknown: "#f44747",
+  default_symbol: "#569cd6", 
 };
 
 const getColor = (type: string): string => {
@@ -40,7 +79,8 @@ const getColor = (type: string): string => {
   return "#d4d4d4";
 };
 
-// ... [Keep TreeNode component same as before] ...
+// --- Recursive Tree Component ---
+
 const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth = 0 }) => {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
@@ -84,19 +124,24 @@ const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth =
   );
 };
 
-// ... [Keep App component structure mostly same] ...
+// --- Main App Component ---
+
 const App: React.FC = () => {
-  // ... [Keep state definitions same] ...
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
   
-  const [files, setFiles] = useState<CodeFile[]>([{ id: '1', name: 'main.sl', content: '' }]);
+  // File System State
+  const [files, setFiles] = useState<CodeFile[]>([
+    { id: '1', name: 'main.sl', content: '' }
+  ]);
   const [activeFileId, setActiveFileId] = useState<string>('1');
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
+  // Analysis State
   const [tokens, setTokens] = useState<Token[]>([]);
   const [parseTree, setParseTree] = useState<ParseNode | null>(null);
   const [errors, setErrors] = useState<LexerError[]>([]);
   
+  // UI State
   const [activeTab, setActiveTab] = useState<'symbol' | 'tree'>('symbol');
   const [showErrors, setShowErrors] = useState<boolean>(false);
 
@@ -104,13 +149,17 @@ const App: React.FC = () => {
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
+  // Derived active file
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
 
   useEffect(() => {
     let ws: WebSocket;
+
     function connect() {
       setWsStatus("CONNECTING");
-      ws = new WebSocket("ws://localhost:8000/ws");
+      // Use environment variable for URL if available (for Vercel deployment)
+      const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
+      ws = new WebSocket(WS_URL);
       wsRef.current = ws;
 
       ws.addEventListener("open", () => setWsStatus("CONNECTED"));
@@ -120,8 +169,11 @@ const App: React.FC = () => {
           const data: WsMessage = JSON.parse(ev.data);
           if (data.tokens) setTokens(data.tokens);
           if (data.errors) setErrors(data.errors);
-          if (data.parseTree) setParseTree(data.parseTree);
-          else setParseTree(null);
+          if (data.parseTree) {
+             setParseTree(data.parseTree);
+          } else {
+             setParseTree(null);
+          }
         } catch (e) {
           console.error("Invalid message from server", e);
         }
@@ -131,19 +183,24 @@ const App: React.FC = () => {
         setWsStatus("DISCONNECTED");
         setTimeout(connect, 800);
       });
+
       ws.addEventListener("error", (e) => {
         console.error("WebSocket error", e);
         ws.close();
       });
     }
+
     connect();
-    return () => { if (wsRef.current) wsRef.current.close(); };
+    return () => {
+      if (wsRef.current) wsRef.current.close();
+    };
   }, []);
 
-  // ... [Keep handler functions same: triggerAnalysis, handleCodeChange, etc.] ...
+  // Send Code Trigger
   function triggerAnalysis(code: string) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (sendTimer.current) clearTimeout(sendTimer.current);
+    
     sendTimer.current = setTimeout(() => {
       try {
         if (code.trim() === "") {
@@ -152,34 +209,53 @@ const App: React.FC = () => {
             setParseTree(null);
         }
         wsRef.current?.send(JSON.stringify({ code }));
-      } catch (e) { console.error("send failed", e); }
+      } catch (e) {
+        console.error("send failed", e);
+      }
     }, 160);
   }
 
+  // --- File Handlers ---
+
   function handleCodeChange(e: ChangeEvent<HTMLTextAreaElement>) {
     const newContent = e.target.value;
-    setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content: newContent } : f));
+    
+    setFiles(prev => prev.map(f => 
+      f.id === activeFileId ? { ...f, content: newContent } : f
+    ));
+    
     triggerAnalysis(newContent);
   }
 
   function handleAddFile() {
     const newId = Date.now().toString();
-    const newFile: CodeFile = { id: newId, name: `script_${files.length}.sl`, content: '' };
+    const newFile: CodeFile = {
+      id: newId,
+      name: `script_${files.length}.sl`,
+      content: ''
+    };
     setFiles([...files, newFile]);
     setActiveFileId(newId);
     triggerAnalysis('');
-    setTimeout(() => { if(textareaRef.current) textareaRef.current.focus(); }, 0);
+    
+    // Auto-focus logic
+    setTimeout(() => {
+        if(textareaRef.current) textareaRef.current.focus();
+    }, 0);
   }
 
   function handleCloseFile(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (files.length === 1) {
+       // Don't close last file, just clear it
        setFiles([{...files[0], content: ''}]);
        triggerAnalysis('');
        return;
     }
+    
     const newFiles = files.filter(f => f.id !== id);
     setFiles(newFiles);
+    
     if (activeFileId === id) {
         const next = newFiles[0];
         setActiveFileId(next.id);
@@ -205,9 +281,16 @@ const App: React.FC = () => {
       const start = target.selectionStart;
       const end = target.selectionEnd;
       const indent = "    "; 
+      
       const newContent = activeFile.content.substring(0, start) + indent + activeFile.content.substring(end);
-      setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content: newContent } : f));
+      
+      // Update file content
+      setFiles(prev => prev.map(f => 
+        f.id === activeFileId ? { ...f, content: newContent } : f
+      ));
+      
       triggerAnalysis(newContent);
+
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + indent.length;
@@ -216,6 +299,7 @@ const App: React.FC = () => {
     }
   };
 
+  // Filter Errors
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR');
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const activeErrors = activeTab === 'symbol' ? lexerErrors : parserErrors;
@@ -246,11 +330,14 @@ const App: React.FC = () => {
           </div>
         </header>
 
+        {/* Main content */}
         <div className="grid lg:grid-cols-2 gap-6">
           
+          {/* Left column: Editor with Tabs */}
           <div className="space-y-6">
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
               
+              {/* File Tabs Header */}
               <div className="flex items-center bg-zinc-950/50 border-b border-zinc-800/50 overflow-x-auto scrollbar-hide">
                  {files.map(file => (
                    <div 
@@ -262,7 +349,10 @@ const App: React.FC = () => {
                        ${activeFileId === file.id ? 'bg-zinc-900/60 text-yellow-400 border-b-2 border-b-yellow-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'}
                      `}
                    >
+                     {/* File Icon */}
                      <span className="opacity-70">📄</span>
+                     
+                     {/* Name or Rename Input */}
                      {renamingId === file.id ? (
                         <input 
                           autoFocus
@@ -274,15 +364,28 @@ const App: React.FC = () => {
                      ) : (
                         <span className="truncate flex-1">{file.name}</span>
                      )}
+                     
+                     {/* Close Button */}
                      <button 
                        onClick={(e) => handleCloseFile(e, file.id)}
-                       className={`w-5 h-5 rounded hover:bg-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity ${files.length === 1 ? 'hidden' : ''}`}
+                       className={`
+                         w-5 h-5 rounded hover:bg-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
+                         ${files.length === 1 ? 'hidden' : ''}
+                       `}
                      >
                        ×
                      </button>
                    </div>
                  ))}
-                 <button onClick={handleAddFile} className="px-3 py-3 text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/30 transition-colors">+</button>
+                 
+                 {/* Add File Button */}
+                 <button 
+                   onClick={handleAddFile}
+                   className="px-3 py-3 text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/30 transition-colors"
+                   title="New File"
+                 >
+                   +
+                 </button>
               </div>
               
               <textarea
@@ -297,25 +400,35 @@ const App: React.FC = () => {
             </div>
           </div>
 
+          {/* Right column: Output Tabs */}
           <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[800px]">
             
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
               <div className="flex space-x-1 bg-zinc-950/50 p-1 rounded-lg">
                  <button
                    onClick={() => { setActiveTab('symbol'); setShowErrors(false); }}
-                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'symbol' ? 'bg-zinc-800 text-yellow-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+                     activeTab === 'symbol' 
+                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
+                       : 'text-zinc-500 hover:text-zinc-300'
+                   }`}
                  >
                    Lexer
                  </button>
                  <button
                    onClick={() => { setActiveTab('tree'); setShowErrors(false); }}
-                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'tree' ? 'bg-zinc-800 text-yellow-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}
+                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+                     activeTab === 'tree' 
+                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
+                       : 'text-zinc-500 hover:text-zinc-300'
+                   }`}
                  >
                    Parser
                  </button>
               </div>
 
               <div className="flex items-center gap-3">
+                 {/* Error Toggle Button */}
                  <button 
                    onClick={() => setShowErrors(!showErrors)}
                    className={`
@@ -341,7 +454,9 @@ const App: React.FC = () => {
             
             <div className="flex-1 overflow-auto p-0">
               
+              {/* Conditional View Rendering */}
               {showErrors ? (
+                // Error View
                 <div className="p-4 space-y-2">
                    {activeErrors.length === 0 ? (
                       <div className="text-center text-zinc-500 mt-10 text-sm">No errors in this phase.</div>
@@ -358,6 +473,7 @@ const App: React.FC = () => {
                    )}
                 </div>
               ) : (
+                // Data View
                 <>
                   {activeTab === 'symbol' && (
                      tokens.length === 0 ? (
@@ -379,13 +495,10 @@ const App: React.FC = () => {
                             <tr key={i} className="hover:bg-zinc-800/30 transition-colors group">
                               <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.line}</td>
                               <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.col}</td>
-                              
-                              {/* UPDATED: Show alias if available */}
                               <td className="px-4 py-1 text-zinc-300 break-all">
                                 {t.value}
-                                {t.alias && <span className="ml-2 text-zinc-600 text-[10px] tracking-wide">→ {t.alias}</span>}
+                                {t.alias && <span className="ml-2 text-zinc-500 text-[10px] tracking-wide">→ {t.alias}</span>}
                               </td>
-                              
                               <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>{t.type}</td>
                             </tr>
                           ))}
