@@ -6,48 +6,24 @@ import type { ChangeEvent, KeyboardEvent } from "react";
 type Token = {
   type: string;
   value: string;
+  alias?: string; // <--- NEW FIELD
   line: number;
   col: number;
   start: number;
   end: number;
 };
 
-type LexerError = {
-  type: string;
-  message: string;
-  line: number;
-  col: number;
-  start: number;
-  end: number;
-};
+// ... [Keep LexerError, ParseNode, WsMessage types same as before] ...
+type LexerError = { type: string; message: string; line: number; col: number; start: number; end: number; };
+type ParseNode = { type: string; value?: string; children: ParseNode[]; };
+type WsMessage = { tokens?: Token[]; errors?: LexerError[]; parseTree?: ParseNode; };
+type CodeFile = { id: string; name: string; content: string; };
 
-type ParseNode = {
-  type: string;
-  value?: string;
-  children: ParseNode[];
-};
-
-type WsMessage = {
-  tokens?: Token[];
-  errors?: LexerError[];
-  parseTree?: ParseNode;
-};
-
-type CodeFile = {
-  id: string;
-  name: string;
-  content: string;
-};
-
-// --- Color Mapping ---
-
+// ... [Keep tokenColors and getColor same as before] ...
 const tokenColors: Record<string, string> = {
-  comment: "#6a9955", 
-  kai_lit: "#b5cea8", flux_lit: "#b5cea8", aster_lit: "#b5cea8", 
-  id: "#dcdcaa", identifier: "#dcdcaa",
-  selene_literal: "#ce9178", blaze_literal: "#ce9178", 
-  leo_label: "#4ec9b0", 
-  whitespace: "#ffffff", newline: "#ffffff", tab: "#ffffff",
+  comment: "#6a9955", kai_lit: "#b5cea8", flux_lit: "#b5cea8", aster_lit: "#b5cea8", 
+  id: "#dcdcaa", identifier: "#dcdcaa", selene_literal: "#ce9178", blaze_literal: "#ce9178", 
+  leo_label: "#4ec9b0", whitespace: "#ffffff", newline: "#ffffff", tab: "#ffffff",
   and: "#c586c0", aster: "#c586c0", blaze: "#c586c0", cos: "#c586c0", flux: "#c586c0", 
   hubble: "#c586c0", iris: "#c586c0", ixion: "#c586c0", kai: "#c586c0", lani: "#c586c0", 
   leo: "#c586c0", let: "#c586c0", lumen: "#c586c0", lumina: "#c586c0", luna: "#c586c0", 
@@ -64,7 +40,7 @@ const getColor = (type: string): string => {
   return "#d4d4d4";
 };
 
-// --- Recursive Tree Component ---
+// ... [Keep TreeNode component same as before] ...
 const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth = 0 }) => {
   const [expanded, setExpanded] = useState(true);
   const hasChildren = node.children && node.children.length > 0;
@@ -108,26 +84,21 @@ const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth =
   );
 };
 
-// --- Main App Component ---
-
+// ... [Keep App component structure mostly same] ...
 const App: React.FC = () => {
+  // ... [Keep state definitions same] ...
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
   
-  // File System State
-  const [files, setFiles] = useState<CodeFile[]>([
-    { id: '1', name: 'main.sl', content: '' }
-  ]);
+  const [files, setFiles] = useState<CodeFile[]>([{ id: '1', name: 'main.sl', content: '' }]);
   const [activeFileId, setActiveFileId] = useState<string>('1');
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
-  // Analysis State
   const [tokens, setTokens] = useState<Token[]>([]);
   const [parseTree, setParseTree] = useState<ParseNode | null>(null);
   const [errors, setErrors] = useState<LexerError[]>([]);
   
-  // UI State
   const [activeTab, setActiveTab] = useState<'symbol' | 'tree'>('symbol');
-  const [showErrors, setShowErrors] = useState<boolean>(false); // Toggle state
+  const [showErrors, setShowErrors] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,9 +110,7 @@ const App: React.FC = () => {
     let ws: WebSocket;
     function connect() {
       setWsStatus("CONNECTING");
-      // Use the environment variable if available, otherwise fallback to localhost
-      const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
-      ws = new WebSocket(WS_URL);
+      ws = new WebSocket("ws://localhost:8000/ws");
       wsRef.current = ws;
 
       ws.addEventListener("open", () => setWsStatus("CONNECTED"));
@@ -171,6 +140,7 @@ const App: React.FC = () => {
     return () => { if (wsRef.current) wsRef.current.close(); };
   }, []);
 
+  // ... [Keep handler functions same: triggerAnalysis, handleCodeChange, etc.] ...
   function triggerAnalysis(code: string) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (sendTimer.current) clearTimeout(sendTimer.current);
@@ -246,7 +216,6 @@ const App: React.FC = () => {
     }
   };
 
-  // Filter Errors
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR');
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const activeErrors = activeTab === 'symbol' ? lexerErrors : parserErrors;
@@ -279,7 +248,6 @@ const App: React.FC = () => {
 
         <div className="grid lg:grid-cols-2 gap-6">
           
-          {/* Editor Column */}
           <div className="space-y-6">
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
               
@@ -329,7 +297,6 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Analysis Column */}
           <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[800px]">
             
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
@@ -349,7 +316,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                 {/* Error Toggle Button */}
                  <button 
                    onClick={() => setShowErrors(!showErrors)}
                    className={`
@@ -375,9 +341,7 @@ const App: React.FC = () => {
             
             <div className="flex-1 overflow-auto p-0">
               
-              {/* Conditional View Rendering */}
               {showErrors ? (
-                // Error View
                 <div className="p-4 space-y-2">
                    {activeErrors.length === 0 ? (
                       <div className="text-center text-zinc-500 mt-10 text-sm">No errors in this phase.</div>
@@ -394,7 +358,6 @@ const App: React.FC = () => {
                    )}
                 </div>
               ) : (
-                // Data View
                 <>
                   {activeTab === 'symbol' && (
                      tokens.length === 0 ? (
@@ -416,7 +379,13 @@ const App: React.FC = () => {
                             <tr key={i} className="hover:bg-zinc-800/30 transition-colors group">
                               <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.line}</td>
                               <td className="px-4 py-1 text-zinc-500 tabular-nums">{t.col}</td>
-                              <td className="px-4 py-1 text-zinc-300 break-all">{t.value}</td>
+                              
+                              {/* UPDATED: Show alias if available */}
+                              <td className="px-4 py-1 text-zinc-300 break-all">
+                                {t.value}
+                                {t.alias && <span className="ml-2 text-zinc-600 text-[10px] tracking-wide">→ {t.alias}</span>}
+                              </td>
+                              
                               <td className="px-4 py-1 font-semibold" style={{color: getColor(t.type)}}>{t.type}</td>
                             </tr>
                           ))}
@@ -434,7 +403,9 @@ const App: React.FC = () => {
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full text-zinc-500 mt-20">
                           <p className="text-sm font-medium">No valid parse tree available.</p>
-                          <p className="text-xs text-zinc-600 mt-2">Fix syntax errors to generate the tree.</p>
+                          <p className="text-xs text-zinc-600 mt-2">
+                            {hasErrors ? "Lexer errors prevented parsing." : "Fix syntax errors to generate the tree."}
+                          </p>
                         </div>
                       )}
                     </div>

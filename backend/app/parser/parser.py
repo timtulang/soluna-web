@@ -15,7 +15,6 @@ class ParseNode:
 
 class Parser:
     def __init__(self, tokens):
-        # Filter whitespace/comments
         self.tokens = [t for t in tokens if t['type'] not in ('whitespace', 'tab', 'newline', 'comment')]
         self.cursor = 0
 
@@ -44,6 +43,10 @@ class Parser:
                 f"Syntax Error at Line {token['line']}: Expected '{expected_type}', found '{token['type']}' ('{token['value']}')"
             )
 
+    def get_val(self, token):
+        """Helper to get the aliased value (identifier1) if present, else original value."""
+        return token.get('alias', token['value'])
+
     # =========================================================================
     #  GRAMMAR IMPLEMENTATION
     # =========================================================================
@@ -69,7 +72,6 @@ class Parser:
             nnt = self.peek_token(2)
 
             is_func = False
-            # Check for function definition pattern: type identifier (
             if ct['type'] in declaration_starters:
                 if nt and nt['type'] == 'identifier' and nnt and nnt['type'] == '(':
                     is_func = True
@@ -129,11 +131,15 @@ class Parser:
 
     def parse_var_init(self):
         children = []
-        children.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
+        
+        # UPDATED: Use get_val for alias
+        tok = self.eat('identifier')
+        children.append(ParseNode("Identifier", value=self.get_val(tok)))
         
         while self.current_token() and self.current_token()['type'] == ',':
             self.eat(',')
-            children.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
+            tok = self.eat('identifier')
+            children.append(ParseNode("Identifier", value=self.get_val(tok)))
         
         if self.current_token()['type'] == '=':
             self.eat('=')
@@ -149,7 +155,11 @@ class Parser:
     def parse_table_dec(self):
         self.eat('hubble')
         dtype = self.parse_data_type()
-        ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
+        
+        # UPDATED
+        tok = self.eat('identifier')
+        ident = ParseNode("Identifier", value=self.get_val(tok))
+        
         self.eat('=')
         self.eat('{')
         elements = []
@@ -167,7 +177,10 @@ class Parser:
     def parse_func_def(self):
         children = []
         children.append(self.parse_func_data_type())
-        children.append(ParseNode("FuncName", value=self.eat('identifier')['value']))
+        
+        # UPDATED: FuncName
+        tok = self.eat('identifier')
+        children.append(ParseNode("FuncName", value=self.get_val(tok)))
         
         self.eat('(')
         params = []
@@ -187,7 +200,9 @@ class Parser:
 
     def parse_param(self):
         dtype = self.parse_data_type()
-        ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
+        # UPDATED
+        tok = self.eat('identifier')
+        ident = ParseNode("Identifier", value=self.get_val(tok))
         return ParseNode("Param", children=[dtype, ident])
 
     def parse_func_return(self):
@@ -244,19 +259,17 @@ class Parser:
         elif t_type == 'identifier':
             next_t = self.peek_token()
             
-            # Function Call: id(...)
             if next_t and next_t['type'] == '(':
                 return self.parse_func_call_stmt()
                 
-            # Postfix Unary Start (i++ ...) handled via expression parsing
             elif next_t and next_t['value'] in ['++', '--']:
+                # UPDATED: Postfix unary (i++ + 5)
                 expr = self.parse_expression()
                 self.eat(';')
                 return ParseNode("ExpressionStatement", children=[expr])
             
             return self.parse_assignment_statement()
         
-        # Prefix Unary as statement: ++id;
         elif t_type in ['!', 'not'] or tok['value'] in ['++', '--']:
              expr = self.parse_expression()
              self.eat(';')
@@ -301,30 +314,25 @@ class Parser:
         return ParseNode("WhileLoop", children=[cond, body])
 
     def parse_for_loop(self):
-        """
-        Rule 141: phase <for-loop-params> cos <statements> mos
-        Rule 155: <for-loop-params> -> <for_start> <for_limit> <for_step>
-        Rule 157: <for_start> -> kai identifier = <expr-factor>
-        """
         self.eat('phase')
         
-        # --- Start Clause (Strict Rule 157) ---
-        self.eat('kai') # Enforce 'kai'
-        id_token = self.eat('identifier')
+        # --- Start Clause ---
+        self.eat('kai') 
+        # UPDATED
+        tok = self.eat('identifier')
+        id_val = self.get_val(tok)
+        
         self.eat('=')
-        init_val = self.parse_expression() # Parses the value
+        init_val = self.parse_expression()
         
         start_node = ParseNode("ForInit", children=[
             ParseNode("DataType", value="kai"),
-            ParseNode("Identifier", value=id_token['value']),
+            ParseNode("Identifier", value=id_val),
             init_val
         ])
         
-        # --- Limit Clause ---
         self.eat(',')
         limit = self.parse_expression()
-        
-        # --- Step Clause ---
         self.eat(',')
         step = self.parse_expression()
         
@@ -348,10 +356,17 @@ class Parser:
         self.eat('(')
         args = []
         if self.current_token()['type'] != ')':
-            args.append(ParseNode("Arg", value=self.eat(self.current_token()['type'])['value']))
+            # lumina args (identifier or string)
+            tok = self.eat(self.current_token()['type'])
+            # Only use alias if it's an identifier
+            val = self.get_val(tok) if tok['type'] == 'identifier' else tok['value']
+            args.append(ParseNode("Arg", value=val))
+            
             while self.current_token()['type'] == ',':
                 self.eat(',')
-                args.append(ParseNode("Arg", value=self.eat(self.current_token()['type'])['value']))
+                tok = self.eat(self.current_token()['type'])
+                val = self.get_val(tok) if tok['type'] == 'identifier' else tok['value']
+                args.append(ParseNode("Arg", value=val))
         self.eat(')')
         return ParseNode("InputExpression", children=args)
 
@@ -365,15 +380,16 @@ class Parser:
 
     def parse_goto(self):
         self.eat('leo')
-        target = self.eat('identifier') 
+        tok = self.eat('label') 
         self.eat(';')
-        return ParseNode("Goto", value=target['value'])
+        return ParseNode("Goto", value=self.get_val(tok))
 
     # --- Expressions & Assignments ---
 
     def parse_assignment_statement(self):
+        # UPDATED
         start_token = self.eat('identifier')
-        first_id = ParseNode("Identifier", value=start_token['value'])
+        first_id = ParseNode("Identifier", value=self.get_val(start_token))
 
         # Path A: Table Assignment
         if self.current_token()['type'] == '[':
@@ -403,7 +419,9 @@ class Parser:
         targets = [first_id]
         while self.current_token()['type'] == ',':
             self.eat(',')
-            targets.append(ParseNode("Identifier", value=self.eat('identifier')['value']))
+            # UPDATED
+            tok = self.eat('identifier')
+            targets.append(ParseNode("Identifier", value=self.get_val(tok)))
 
         op = self.current_token()['value']
         valid_ops = ['=', '-=', '+=', '*=', '/=', '%=']
@@ -431,7 +449,10 @@ class Parser:
         return call_node
 
     def parse_func_call(self):
-        name = self.eat('identifier')['value']
+        # UPDATED
+        tok = self.eat('identifier')
+        name = self.get_val(tok)
+        
         self.eat('(')
         args = []
         if self.current_token()['type'] != ')':
@@ -474,7 +495,9 @@ class Parser:
             if nt and nt['type'] == '(':
                 return self.parse_func_call()
             elif nt and nt['type'] == '[':
-                ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
+                # UPDATED
+                tok = self.eat('identifier')
+                ident = ParseNode("Identifier", value=self.get_val(tok))
                 self.eat('[')
                 idx = self.parse_expression()
                 self.eat(']')
@@ -482,11 +505,13 @@ class Parser:
             
             # Postfix check inside expression (e.g. x = i++ + 1)
             if nt and nt['value'] in ['++', '--']:
-                ident = ParseNode("Identifier", value=self.eat('identifier')['value'])
+                tok = self.eat('identifier')
+                ident = ParseNode("Identifier", value=self.get_val(tok))
                 op = self.eat(self.current_token()['type'])['value']
                 return ParseNode("UnaryExpr", value="postfix " + op, children=[ident])
 
-            return ParseNode("Identifier", value=self.eat('identifier')['value'])
+            tok = self.eat('identifier')
+            return ParseNode("Identifier", value=self.get_val(tok))
 
         elif t_type in ['int', 'float', 'double', 'char', 'string', 'iris', 'sage']:
             return ParseNode("Literal", value=self.eat(t_type)['value'])

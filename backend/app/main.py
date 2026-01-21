@@ -1,3 +1,5 @@
+# main.py
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
@@ -9,7 +11,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "https://soluna-web-theta.vercel.app/"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -17,7 +19,7 @@ app.add_middleware(
 
 def run_pipeline(code: str):
     """
-    Runs Lexer -> (Check Errors) -> Parser
+    Runs Lexer -> Identifier Iteration -> Parser
     """
     # 1. Run Lexer
     lexer = Lexer(code)
@@ -35,6 +37,22 @@ def run_pipeline(code: str):
             "line": meta['line'], 
             "col": meta['col']    
         })
+
+    # --- NEW: Identifier Iteration Logic ---
+    # Assigns identifier1, identifier2, etc. to unique identifiers
+    identifier_map = {}
+    id_counter = 1
+    
+    for token in processed_tokens:
+        if token['type'] == 'identifier':
+            original_val = token['value']
+            # If we haven't seen this identifier yet, assign a new ID
+            if original_val not in identifier_map:
+                identifier_map[original_val] = f"identifier{id_counter}"
+                id_counter += 1
+            
+            # Attach the alias to the token
+            token['alias'] = identifier_map[original_val]
 
     # 3. Gap Filling (for frontend highlighting)
     final_tokens = []
@@ -92,12 +110,13 @@ def run_pipeline(code: str):
         
     if last_end < len(code): process_gap(last_end, len(code))
 
-    # 4. Run Parser (CONDITIONAL)
+    # 4. Run Parser
     parse_tree = None
     parser_error = None
     
     if len(lexer_errors) == 0 and len(processed_tokens) > 0:
         try:
+            # We pass the tokens (which now contain 'alias') to the parser
             parser = Parser(processed_tokens)
             root = parser.parse()
             parse_tree = root.to_dict()
