@@ -255,6 +255,7 @@ class TreeToDict(Transformer):
     def _node(self, type_name, children, value=None):
         return {"type": type_name, "children": children, "value": value}
 
+    # Previously existing rule methods: program, global_dec, etc.
     def program(self, children): return self._node("Program", children)
     def global_dec(self, children): return self._node("GlobalDeclarations", children)
     def variable_declaration(self, children): return self._node("VariableDeclaration", children)
@@ -270,12 +271,17 @@ class TreeToDict(Transformer):
     def assignment(self, children): return self._node("Assignment", children)
     def unary_statement(self, children): return self._node("UnaryStatement", children)
     def empty_statement(self, children): return self._node("EmptyStatement", [])
-    
+
+    # Explicit Token Handlers
     def IDENTIFIER(self, tok): return {"type": "Identifier", "value": tok.value, "children": []}
     def INT_LIT(self, tok): return {"type": "Literal", "value": tok.value, "children": []}
     def FLOAT_LIT(self, tok): return {"type": "Literal", "value": tok.value, "children": []}
     def STRING_LIT(self, tok): return {"type": "Literal", "value": tok.value, "children": []}
     def CHAR_LIT(self, tok): return {"type": "Literal", "value": tok.value, "children": []}
+
+    # Handling for other tokens (reserved words)
+    def __default_token__(self, tok):
+        return {"type": tok.type, "value": tok.value, "children": []}
     
     def __default__(self, data, children, meta):
         return {"type": data, "children": children}

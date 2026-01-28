@@ -22,10 +22,14 @@ type LexerError = {
   end: number;
 };
 
+// FIX: Changed [key: string]: any to [key: string]: unknown to satisfy TypeScript strict mode
 type ParseNode = {
-  type: string;
+  type?: string;       
+  data?: string;       
+  rule?: string;       
   value?: string;
-  children: ParseNode[];
+  children?: ParseNode[];
+  [key: string]: unknown;  // Type-safe catch-all
 };
 
 type WsMessage = {
@@ -43,39 +47,79 @@ type CodeFile = {
 // --- Color Mapping ---
 
 const tokenColors: Record<string, string> = {
-  // Literals & Identifiers
-  comment: "#6a9955", 
+  // --- Syntax Rules (Backend Rules) ---
+  program: "#facc15", 
+  globaldeclarations: "#e4e4e7", 
+  functiondefinition: "#c586c0", 
+  variabledeclaration: "#4ec9b0", 
+  block: "#e4e4e7",
+  ifstatement: "#c586c0",
+  whileloop: "#c586c0",
+  forloop: "#c586c0",
+  returnstatement: "#c586c0",
+  assignment: "#4ec9b0",
+  expressionstatement: "#e4e4e7",
+
+  // --- Literals & Identifiers ---
+  identifier: "#9cdcfe", // Light Blue
+  literal: "#b5cea8",    // Light Green 
+  
+  // --- Reserved Words (Keywords) ---
+  if: "#c586c0",
+  else: "#c586c0",
+  while: "#c586c0",
+  for: "#c586c0",
+  return: "#c586c0",
+  break: "#c586c0",
+  continue: "#c586c0",
+  
+  // Declarations & Types
+  var: "#569cd6",
+  let: "#569cd6",
+  const: "#569cd6",
+  int: "#569cd6",
+  float: "#569cd6",
+  string: "#569cd6",
+  char: "#569cd6",
+  void: "#569cd6",
+  bool: "#569cd6",
+  
+  // --- Custom/Other Tokens ---
   kai_lit: "#b5cea8", 
   flux_lit: "#b5cea8",
   aster_lit: "#b5cea8", 
-  id: "#dcdcaa", 
-  identifier: "#dcdcaa",
   selene_literal: "#ce9178", 
   blaze_literal: "#ce9178", 
   leo_label: "#4ec9b0", 
   
-  // Whitespace
+  // --- Operators & Punctuation ---
+  lparen: "#ffd700",
+  rparen: "#ffd700",
+  lbrace: "#ffd700",
+  rbrace: "#ffd700",
+  semi: "#d4d4d4",
+  comma: "#d4d4d4",
+  
+  // --- Whitespace ---
   whitespace: "#ffffff",
   newline: "#ffffff",
   tab: "#ffffff",
   
-  // Keywords
-  and: "#c586c0", aster: "#c586c0", blaze: "#c586c0", cos: "#c586c0", flux: "#c586c0", 
-  hubble: "#c586c0", iris: "#c586c0", ixion: "#c586c0", kai: "#c586c0", lani: "#c586c0", 
-  leo: "#c586c0", let: "#c586c0", lumen: "#c586c0", lumina: "#c586c0", luna: "#c586c0", 
-  mos: "#c586c0", not: "#c586c0", nova: "#c586c0", or: "#c586c0", orbit: "#c586c0", 
-  phase: "#c586c0", sage: "#c586c0", selene: "#c586c0", sol: "#c586c0", soluna: "#c586c0", 
-  star: "#c586c0", void: "#c586c0", wane: "#c586c0", warp: "#c586c0", wax: "#c586c0", 
-  zara: "#c586c0", zeru: "#c586c0", zeta: "#c586c0",
-  
-  // Fallbacks
+  // --- Fallbacks ---
   unknown: "#f44747",
   default_symbol: "#569cd6", 
 };
 
-const getColor = (type: string): string => {
+// Safe Color Lookup
+const getColor = (rawType: string): string => {
+  if (!rawType) return "#d4d4d4";
+  const type = String(rawType).toLowerCase(); 
+  
   if (tokenColors[type]) { return tokenColors[type]; }
-  if (type.length <= 3 && !/^[a-z0-9_]+$/.test(type)) { return tokenColors.default_symbol; }
+  
+  // Heuristic: Short uppercase codes (EQ, NEQ, GT) are likely operators/tokens
+  if (type.length <= 4 && !/^[a-z0-9_]+$/.test(type)) { return tokenColors.default_symbol; }
+  
   return "#d4d4d4";
 };
 
@@ -83,29 +127,48 @@ const getColor = (type: string): string => {
 
 const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth = 0 }) => {
   const [expanded, setExpanded] = useState(true);
-  const hasChildren = node.children && node.children.length > 0;
   
-  const isLiteral = node.type === "Literal";
-  const isIdentifier = node.type === "Identifier";
-  const isProgram = node.type === "Program";
+  if (!node) return null;
+
+  // Robust Children Check
+  const children = Array.isArray(node.children) ? node.children : [];
+  const hasChildren = children.length > 0;
   
-  const labelColor = isProgram ? "text-yellow-400" 
-    : isLiteral ? "text-green-300"
-    : isIdentifier ? "text-blue-300"
-    : "text-zinc-300";
+  // Prioritize 'type' (Backend), then 'data' (Lark default), then 'rule'
+  const rawType = node.type || node.data || node.rule || "Unknown";
+  // Ensure rawType is treated as a string before manipulation
+  const typeStr = String(rawType);
+  const typeKey = typeStr.toLowerCase();
+
+  const nodeColor = tokenColors[typeKey] 
+      ? tokenColors[typeKey]
+      : hasChildren 
+        ? "#e4e4e7" 
+        : getColor(typeStr);
+
+  // Debug handler
+  const handleNodeClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    console.log("Clicked Node Data:", node); 
+    setExpanded(!expanded);
+  };
 
   return (
     <div className="font-mono text-sm leading-relaxed select-none">
       <div 
         className={`flex items-center gap-2 py-0.5 hover:bg-white/5 rounded px-2 cursor-pointer transition-colors`}
         style={{ paddingLeft: `${depth * 20 + 8}px` }}
-        onClick={() => setExpanded(!expanded)}
+        onClick={handleNodeClick}
       >
         <span className={`w-4 h-4 flex items-center justify-center text-zinc-500 text-[10px] transform transition-transform ${expanded ? 'rotate-90' : ''}`}>
           {hasChildren ? '▶' : '•'}
         </span>
-        <span className={`font-semibold ${labelColor}`}>
-          {node.type}
+        <span 
+          className="font-semibold" 
+          style={{ color: nodeColor }}
+          title={`Type: ${typeStr}`} 
+        >
+          {typeStr}
         </span>
         {node.value && (
           <span className="text-zinc-500 text-xs">
@@ -115,8 +178,8 @@ const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth =
       </div>
       {expanded && hasChildren && (
         <div className="border-l border-zinc-800 ml-[15px] relative">
-          {node.children.map((child, i) => (
-            <TreeNode key={i} node={child} depth={depth + 1} />
+          {children.map((child, i) => (
+             child ? <TreeNode key={i} node={child} depth={depth + 1} /> : null
           ))}
         </div>
       )}
@@ -129,34 +192,26 @@ const TreeNode: React.FC<{ node: ParseNode; depth?: number }> = ({ node, depth =
 const App: React.FC = () => {
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
   
-  // File System State
   const [files, setFiles] = useState<CodeFile[]>([
     { id: '1', name: 'main.sl', content: '' }
   ]);
   const [activeFileId, setActiveFileId] = useState<string>('1');
   const [renamingId, setRenamingId] = useState<string | null>(null);
 
-  // Analysis State
   const [tokens, setTokens] = useState<Token[]>([]);
   const [parseTree, setParseTree] = useState<ParseNode | null>(null);
   const [errors, setErrors] = useState<LexerError[]>([]);
   
-  // UI State
   const [activeTab, setActiveTab] = useState<'symbol' | 'tree'>('symbol');
   const [showErrors, setShowErrors] = useState<boolean>(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Refs for Editor
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Derived active file
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
-
-  // Calculate lines for line numbering
   const lineCount = activeFile.content.split('\n').length;
   const lines = Array.from({ length: lineCount }, (_, i) => i + 1);
 
@@ -165,6 +220,7 @@ const App: React.FC = () => {
 
     function connect() {
       setWsStatus("CONNECTING");
+      // Use environment variable for URL if available (for Vercel deployment)
       const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
       ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -176,9 +232,10 @@ const App: React.FC = () => {
           const data: WsMessage = JSON.parse(ev.data);
           if (data.tokens) setTokens(data.tokens);
           if (data.errors) setErrors(data.errors);
+          
           if (data.parseTree) {
              setParseTree(data.parseTree);
-          } else {
+          } else if (data.errors && data.errors.length > 0) {
              setParseTree(null);
           }
         } catch (e) {
@@ -221,22 +278,17 @@ const App: React.FC = () => {
     }, 160);
   }
 
-  // --- Scroll Sync ---
   const handleScroll = () => {
     if (textareaRef.current && lineNumbersRef.current) {
       lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
     }
   };
 
-  // --- File Handlers ---
-
   function handleCodeChange(e: ChangeEvent<HTMLTextAreaElement>) {
     const newContent = e.target.value;
-    
     setFiles(prev => prev.map(f => 
       f.id === activeFileId ? { ...f, content: newContent } : f
     ));
-    
     triggerAnalysis(newContent);
   }
 
@@ -282,20 +334,12 @@ const App: React.FC = () => {
     reader.onload = (ev) => {
       const content = ev.target?.result as string;
       const newId = Date.now().toString();
-      
-      const newFile: CodeFile = {
-        id: newId,
-        name: file.name,
-        content: content
-      };
-
+      const newFile: CodeFile = { id: newId, name: file.name, content: content };
       setFiles(prev => [...prev, newFile]);
       setActiveFileId(newId);
       triggerAnalysis(content);
-      
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
-    
     reader.readAsText(file);
   }
 
@@ -306,10 +350,8 @@ const App: React.FC = () => {
        triggerAnalysis('');
        return;
     }
-    
     const newFiles = files.filter(f => f.id !== id);
     setFiles(newFiles);
-    
     if (activeFileId === id) {
         const next = newFiles[0];
         setActiveFileId(next.id);
@@ -337,13 +379,8 @@ const App: React.FC = () => {
       const indent = "    "; 
       
       const newContent = activeFile.content.substring(0, start) + indent + activeFile.content.substring(end);
-      
-      setFiles(prev => prev.map(f => 
-        f.id === activeFileId ? { ...f, content: newContent } : f
-      ));
-      
+      setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content: newContent } : f));
       triggerAnalysis(newContent);
-
       setTimeout(() => {
         if (textareaRef.current) {
           textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + indent.length;
@@ -352,12 +389,10 @@ const App: React.FC = () => {
     }
   };
 
-  // Filter Errors
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR');
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const activeErrors = activeTab === 'symbol' ? lexerErrors : parserErrors;
   const hasErrors = activeErrors.length > 0;
-
   const isErrorButtonDisabled = !hasErrors && !showErrors;
 
   return (
@@ -386,14 +421,9 @@ const App: React.FC = () => {
         </header>
 
         <div className="grid lg:grid-cols-12 gap-6">
-          
-          {/* Left column: Editor */}
-          <div className="lg:col-span-7 space-y-6">
+          <div className="lg:col-span-7 space-y-6 min-w-0">
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
-              
-              {/* File Tabs & Actions Toolbar */}
               <div className="flex items-center justify-between bg-zinc-950/50 border-b border-zinc-800/50">
-                {/* Tabs Area */}
                 <div className="flex-1 flex overflow-x-auto scrollbar-hide">
                    {files.map(file => (
                      <div 
@@ -430,8 +460,7 @@ const App: React.FC = () => {
                    ))}
                 </div>
 
-                {/* Fixed Action Buttons */}
-                <div className="flex items-center px-1 bg-zinc-950/50 h-full border-l border-zinc-800/50 z-10">
+                <div className="flex items-center px-1 bg-zinc-950/50 h-full border-l border-zinc-800/50 z-10 shadow-[-10px_0_15px_-5px_rgba(0,0,0,0.5)]">
                    <input 
                      type="file" 
                      ref={fileInputRef} 
@@ -439,41 +468,25 @@ const App: React.FC = () => {
                      className="hidden" 
                      accept=".sl,.txt,.js,.ts"
                    />
-                   <button 
-                     onClick={handleAddFile}
-                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/50 rounded transition-colors"
-                   >
+                   <button onClick={handleAddFile} className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/50 rounded transition-colors" title="New File">
                      <span className="text-lg leading-none">+</span>
                    </button>
                    <div className="w-px h-5 bg-zinc-800 mx-1"></div>
-                   <button 
-                     onClick={triggerFileUpload}
-                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50 rounded transition-colors"
-                   >
+                   <button onClick={triggerFileUpload} className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50 rounded transition-colors" title="Open File">
                      <span className="text-lg leading-none">📂</span>
                    </button>
-                   <button 
-                     onClick={handleDownload}
-                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-green-400 hover:bg-zinc-900/50 rounded transition-colors"
-                   >
+                   <button onClick={handleDownload} className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-green-400 hover:bg-zinc-900/50 rounded transition-colors" title="Save File">
                      <span className="text-lg leading-none">💾</span>
                    </button>
                 </div>
               </div>
               
-              {/* Editor Area with Line Numbers */}
               <div className="flex flex-1 relative overflow-hidden">
-                {/* Line Numbers Column */}
-                <div
-                    ref={lineNumbersRef}
-                    className="w-12 flex-shrink-0 pt-6 pr-2 text-right font-mono text-sm leading-relaxed text-zinc-600 select-none bg-zinc-900/20 border-r border-zinc-800/50 overflow-hidden"
-                >
+                <div ref={lineNumbersRef} className="w-12 flex-shrink-0 pt-6 pr-2 text-right font-mono text-sm leading-relaxed text-zinc-600 select-none bg-zinc-900/20 border-r border-zinc-800/50 overflow-hidden">
                     {lines.map((line) => (
                         <div key={line}>{line}</div>
                     ))}
                 </div>
-
-                {/* Text Area */}
                 <textarea
                   ref={textareaRef}
                   value={activeFile.content}
@@ -488,31 +501,11 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right column: Output */}
-          <div className="lg:col-span-5 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
-            {/* ... Output Header ... */}
+          <div className="lg:col-span-5 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px] min-w-0">
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
               <div className="flex space-x-1 bg-zinc-950/50 p-1 rounded-lg">
-                 <button
-                   onClick={() => { setActiveTab('symbol'); setShowErrors(false); }}
-                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
-                     activeTab === 'symbol' 
-                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
-                       : 'text-zinc-500 hover:text-zinc-300'
-                   }`}
-                 >
-                   Lexer
-                 </button>
-                 <button
-                   onClick={() => { setActiveTab('tree'); setShowErrors(false); }}
-                   className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
-                     activeTab === 'tree' 
-                       ? 'bg-zinc-800 text-yellow-400 shadow-sm' 
-                       : 'text-zinc-500 hover:text-zinc-300'
-                   }`}
-                 >
-                   Parser
-                 </button>
+                 <button onClick={() => { setActiveTab('symbol'); setShowErrors(false); }} className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'symbol' ? 'bg-zinc-800 text-yellow-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Lexer</button>
+                 <button onClick={() => { setActiveTab('tree'); setShowErrors(false); }} className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${activeTab === 'tree' ? 'bg-zinc-800 text-yellow-400 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'}`}>Parser</button>
               </div>
 
               <div className="flex items-center gap-3">
@@ -520,11 +513,7 @@ const App: React.FC = () => {
                    onClick={() => setShowErrors(!showErrors)}
                    className={`
                       relative px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border transition-all
-                      ${showErrors 
-                         ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' 
-                         : hasErrors 
-                            ? 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-red-400'
-                            : 'bg-zinc-800/50 text-zinc-600 border-zinc-800/50 cursor-not-allowed'}
+                      ${showErrors ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' : hasErrors ? 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-red-400' : 'bg-zinc-800/50 text-zinc-600 border-zinc-800/50 cursor-not-allowed'}
                    `}
                    disabled={isErrorButtonDisabled}
                  >
@@ -602,8 +591,13 @@ const App: React.FC = () => {
                       ) : (
                         <div className="flex flex-col items-center justify-center h-full text-zinc-500 mt-20">
                           <p className="text-sm font-medium">No valid parse tree available.</p>
-                          <p className="text-xs text-zinc-600 mt-2">
-                            {hasErrors ? "Lexer errors prevented parsing." : "Fix syntax errors to generate the tree."}
+                          {/* UPDATED ERROR DISPLAY LOGIC */}
+                          <p className={`text-xs mt-2 ${lexerErrors.length > 0 || parserErrors.length > 0 ? "text-red-400" : "text-zinc-600"}`}>
+                            {lexerErrors.length > 0 
+                               ? "Lexer errors prevented parsing." 
+                               : parserErrors.length > 0 
+                                 ? "Unresolved parser errors."
+                                 : "Fix syntax errors to generate the tree."}
                           </p>
                         </div>
                       )}
