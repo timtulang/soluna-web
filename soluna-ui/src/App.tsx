@@ -147,18 +147,24 @@ const App: React.FC = () => {
 
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Refs for Editor
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineNumbersRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Derived active file
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
+
+  // Calculate lines for line numbering
+  const lineCount = activeFile.content.split('\n').length;
+  const lines = Array.from({ length: lineCount }, (_, i) => i + 1);
 
   useEffect(() => {
     let ws: WebSocket;
 
     function connect() {
       setWsStatus("CONNECTING");
-      // Use environment variable for URL if available (for Vercel deployment)
       const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8000/ws";
       ws = new WebSocket(WS_URL);
       wsRef.current = ws;
@@ -197,7 +203,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Send Code Trigger
   function triggerAnalysis(code: string) {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (sendTimer.current) clearTimeout(sendTimer.current);
@@ -215,6 +220,13 @@ const App: React.FC = () => {
       }
     }, 160);
   }
+
+  // --- Scroll Sync ---
+  const handleScroll = () => {
+    if (textareaRef.current && lineNumbersRef.current) {
+      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
+    }
+  };
 
   // --- File Handlers ---
 
@@ -239,20 +251,17 @@ const App: React.FC = () => {
     setActiveFileId(newId);
     triggerAnalysis('');
     
-    // Auto-focus logic
     setTimeout(() => {
         if(textareaRef.current) textareaRef.current.focus();
     }, 0);
   }
-
-  // --- New: Save/Upload Handlers ---
 
   function handleDownload() {
     const blob = new Blob([activeFile.content], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = activeFile.name; // Use the file's current name
+    a.download = activeFile.name; 
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -284,19 +293,15 @@ const App: React.FC = () => {
       setActiveFileId(newId);
       triggerAnalysis(content);
       
-      // Reset input so same file can be selected again if needed
       if (fileInputRef.current) fileInputRef.current.value = '';
     };
     
     reader.readAsText(file);
   }
 
-  // ---------------------------------
-
   function handleCloseFile(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (files.length === 1) {
-       // Don't close last file, just clear it
        setFiles([{...files[0], content: ''}]);
        triggerAnalysis('');
        return;
@@ -333,7 +338,6 @@ const App: React.FC = () => {
       
       const newContent = activeFile.content.substring(0, start) + indent + activeFile.content.substring(end);
       
-      // Update file content
       setFiles(prev => prev.map(f => 
         f.id === activeFileId ? { ...f, content: newContent } : f
       ));
@@ -389,8 +393,7 @@ const App: React.FC = () => {
               
               {/* File Tabs & Actions Toolbar */}
               <div className="flex items-center justify-between bg-zinc-950/50 border-b border-zinc-800/50">
-                
-                {/* Scrollable Tabs Area */}
+                {/* Tabs Area */}
                 <div className="flex-1 flex overflow-x-auto scrollbar-hide">
                    {files.map(file => (
                      <div 
@@ -403,7 +406,6 @@ const App: React.FC = () => {
                        `}
                      >
                        <span className="opacity-70">📄</span>
-                       
                        {renamingId === file.id ? (
                           <input 
                             autoFocus
@@ -415,7 +417,6 @@ const App: React.FC = () => {
                        ) : (
                           <span className="truncate flex-1">{file.name}</span>
                        )}
-                       
                        <button 
                          onClick={(e) => handleCloseFile(e, file.id)}
                          className={`
@@ -430,8 +431,7 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Fixed Action Buttons */}
-                <div className="flex items-center px-1 bg-zinc-950/50 h-full border-l border-zinc-800/50 z-10 shadow-[-10px_0_15px_-5px_rgba(0,0,0,0.5)]">
-                   {/* Hidden File Input */}
+                <div className="flex items-center px-1 bg-zinc-950/50 h-full border-l border-zinc-800/50 z-10">
                    <input 
                      type="file" 
                      ref={fileInputRef} 
@@ -439,50 +439,58 @@ const App: React.FC = () => {
                      className="hidden" 
                      accept=".sl,.txt,.js,.ts"
                    />
-
                    <button 
                      onClick={handleAddFile}
                      className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/50 rounded transition-colors"
-                     title="New File"
                    >
                      <span className="text-lg leading-none">+</span>
                    </button>
-                   
                    <div className="w-px h-5 bg-zinc-800 mx-1"></div>
-
                    <button 
                      onClick={triggerFileUpload}
                      className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50 rounded transition-colors"
-                     title="Open File"
                    >
                      <span className="text-lg leading-none">📂</span>
                    </button>
-
                    <button 
                      onClick={handleDownload}
                      className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-green-400 hover:bg-zinc-900/50 rounded transition-colors"
-                     title="Save File"
                    >
                      <span className="text-lg leading-none">💾</span>
                    </button>
                 </div>
               </div>
               
-              <textarea
-                ref={textareaRef}
-                value={activeFile.content}
-                onChange={handleCodeChange}
-                onKeyDown={handleKeyDown}
-                placeholder={`// Start coding in ${activeFile.name}...`}
-                className="w-full flex-1 p-6 bg-transparent text-zinc-100 font-mono text-sm resize-none focus:outline-none placeholder-zinc-600 leading-relaxed"
-                spellCheck="false"
-              />
+              {/* Editor Area with Line Numbers */}
+              <div className="flex flex-1 relative overflow-hidden">
+                {/* Line Numbers Column */}
+                <div
+                    ref={lineNumbersRef}
+                    className="w-12 flex-shrink-0 pt-6 pr-2 text-right font-mono text-sm leading-relaxed text-zinc-600 select-none bg-zinc-900/20 border-r border-zinc-800/50 overflow-hidden"
+                >
+                    {lines.map((line) => (
+                        <div key={line}>{line}</div>
+                    ))}
+                </div>
+
+                {/* Text Area */}
+                <textarea
+                  ref={textareaRef}
+                  value={activeFile.content}
+                  onChange={handleCodeChange}
+                  onKeyDown={handleKeyDown}
+                  onScroll={handleScroll}
+                  placeholder={`// Start coding in ${activeFile.name}...`}
+                  className="flex-1 w-full h-full pt-6 pl-4 pr-6 pb-6 bg-transparent text-zinc-100 font-mono text-sm resize-none focus:outline-none placeholder-zinc-600 leading-relaxed outline-none border-none whitespace-pre overflow-x-auto"
+                  spellCheck="false"
+                />
+              </div>
             </div>
           </div>
 
           {/* Right column: Output */}
           <div className="lg:col-span-5 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
-            
+            {/* ... Output Header ... */}
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
               <div className="flex space-x-1 bg-zinc-950/50 p-1 rounded-lg">
                  <button
