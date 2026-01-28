@@ -1,11 +1,11 @@
-# main.py
+# app/main.py
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import re  
 from app.lexer.lexer import Lexer 
-from app.parser.parser import Parser
+from app.parser.lark_parser import LarkParser  # <--- Updated Import
 
 app = FastAPI()
 
@@ -19,7 +19,7 @@ app.add_middleware(
 
 def run_pipeline(code: str):
     """
-    Runs Lexer -> Identifier Iteration -> Parser
+    Runs Lexer -> Identifier Iteration -> Lark Parser
     """
     # 1. Run Lexer
     lexer = Lexer(code)
@@ -38,8 +38,8 @@ def run_pipeline(code: str):
             "col": meta['col']    
         })
 
-    # --- NEW: Identifier Iteration Logic ---
-    # Assigns identifier1, identifier2, etc. to unique identifiers
+    # --- Identifier Iteration Logic ---
+    # Assigns identifier1, identifier2, etc. to unique identifiers for frontend coloring
     identifier_map = {}
     id_counter = 1
     
@@ -54,7 +54,7 @@ def run_pipeline(code: str):
             # Attach the alias to the token
             token['alias'] = identifier_map[original_val]
 
-    # 3. Gap Filling (for frontend highlighting)
+    # 3. Gap Filling (for frontend highlighting of whitespace/errors)
     final_tokens = []
     last_end = 0
     current_line = 1
@@ -110,18 +110,27 @@ def run_pipeline(code: str):
         
     if last_end < len(code): process_gap(last_end, len(code))
 
-    # 4. Run Parser
+    # 4. Run Parser (Lark)
     parse_tree = None
     parser_error = None
     
+    # Only run parser if lexer succeeded and we have tokens
     if len(lexer_errors) == 0 and len(processed_tokens) > 0:
         try:
-            # We pass the tokens (which now contain 'alias') to the parser
-            parser = Parser(processed_tokens)
-            root = parser.parse()
-            parse_tree = root.to_dict()
+            # Instantiate the LarkParser wrapper
+            parser = LarkParser()
+            
+            # Pass the list of token dictionaries to the parser
+            # The adapter in lark_parser.py will read this list
+            root = parser.parse(processed_tokens)
+            
+            # The result is already a dictionary suitable for the frontend
+            parse_tree = root
+            
         except Exception as e:
-            parser_error = str(e)
+            # Capture the error message for the frontend
+            # Lark errors can be verbose, so you might want to trim them
+            parser_error = str(e).strip()
 
     return final_tokens, lexer_errors, parse_tree, parser_error
 

@@ -13,7 +13,7 @@
 # This is much faster than checking against a list.
 
 RESERVED_WORDS = {
-    'and', 'aster', 'blaze', 'cos', 'flux', 'hubble', 'iris', 
+    'and', 'blaze', 'cos', 'flux', 'hubble', 'iris', 
     'kai', 'lani', 'leo', 'let', 'local', 'lumen', 'lumina', 'luna', 'mos', 'not', 
     'nova', 'or', 'orbit', 'phase', 'sage', 'selene', 'sol', 'soluna', 
     'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'

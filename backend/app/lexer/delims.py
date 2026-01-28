@@ -28,6 +28,7 @@ DELIMS = {
     'close_parenthesis_delim': {';', ',', *REGDEF['general_operators'], ')', ']', '}', *REGDEF['free_delim']},
     'most_data_type_delim': {*REGDEF['general_operators'], *REGDEF['relational_operators'], ')', ']', '}', ';', ',', '.', *REGDEF['free_delim']},
     'leo_delim': {';'},
+    'mos_delim' : {*REGDEF['free_delim'], ',', '}'},
     'zeru_delim': {*REGDEF['free_delim'], ';', ')', *REGDEF['arithmetic_operators'], *REGDEF['relational_operators']},
     'zara_delim': {*REGDEF['free_delim'], '(', ';'},
     'float_delim': {*REGDEF['general_operators'], *REGDEF['relational_operators'], ')', ']', '}', ';', ',', *REGDEF['free_delim']},

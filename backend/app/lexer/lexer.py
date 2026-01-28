@@ -7,9 +7,7 @@ class Lexer:
     WHITESPACE = {' ', '\n', '\t', '\r'}
     
     def __init__(self, source_code: str):
-        # PREPROCESSING: Convert 4 spaces into 1 tab character
-        # This normalizes the input before lexing begins.
-        self.source_code = source_code.replace("    ", "\t")
+        self.source_code = source_code
         self.cursor = 0
         self.line = 1
         self.col = 1
@@ -25,6 +23,7 @@ class Lexer:
         except: 
             return False
 
+
     def _skip_ignorable_whitespace(self):
         while self.cursor < len(self.source_code):
             char = self.source_code[self.cursor]
@@ -33,7 +32,6 @@ class Lexer:
                     self.line += 1
                     self.col = 1
                 elif char == '\t':
-                    # Treat a tab as 4 columns for accurate visual tracking
                     self.col += 4
                 else: 
                     self.col += 1

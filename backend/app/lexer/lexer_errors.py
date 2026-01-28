@@ -5,7 +5,7 @@ import sys
 from .td import STATES 
 
 # State 240 is the state right after seeing a '.', (e.g., "123.")
-UNFINISHED_FLUX_STATES = {240}
+UNFINISHED_FLUX_STATES = {245}
 
 # States 304/308 are inside a string literal.
 UNCLOSED_STRING_STATES = {304, 308}
@@ -14,7 +14,7 @@ UNCLOSED_STRING_STATES = {304, 308}
 UNCLOSED_CHAR_STATES = {298, 302}
 
 # States 314/315 are inside a multi-line comment.
-UNCLOSED_COMMENT_STATES = {314, 315, 3150}
+UNCLOSED_COMMENT_STATES = {314, 315, 316}
 
 
 def check_for_dead_end_error(last_good_active_states, current_lexeme, start_metadata):
