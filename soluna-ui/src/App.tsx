@@ -148,6 +148,7 @@ const App: React.FC = () => {
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Derived active file
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
@@ -244,6 +245,54 @@ const App: React.FC = () => {
     }, 0);
   }
 
+  // --- New: Save/Upload Handlers ---
+
+  function handleDownload() {
+    const blob = new Blob([activeFile.content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = activeFile.name; // Use the file's current name
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function triggerFileUpload() {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  }
+
+  function handleFileRead(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const content = ev.target?.result as string;
+      const newId = Date.now().toString();
+      
+      const newFile: CodeFile = {
+        id: newId,
+        name: file.name,
+        content: content
+      };
+
+      setFiles(prev => [...prev, newFile]);
+      setActiveFileId(newId);
+      triggerAnalysis(content);
+      
+      // Reset input so same file can be selected again if needed
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    };
+    
+    reader.readAsText(file);
+  }
+
+  // ---------------------------------
+
   function handleCloseFile(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (files.length === 1) {
@@ -305,8 +354,6 @@ const App: React.FC = () => {
   const activeErrors = activeTab === 'symbol' ? lexerErrors : parserErrors;
   const hasErrors = activeErrors.length > 0;
 
-  // New logic: Only disable if NO errors AND NOT currently showing the error view.
-  // This allows the user to click "Hide Errors" even if the count is 0.
   const isErrorButtonDisabled = !hasErrors && !showErrors;
 
   return (
@@ -334,62 +381,91 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Main content - CHANGED: Used grid-cols-12 for better control over width ratio */}
         <div className="grid lg:grid-cols-12 gap-6">
           
-          {/* Left column: Editor - CHANGED: col-span-7 (Wider) */}
+          {/* Left column: Editor */}
           <div className="lg:col-span-7 space-y-6">
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
               
-              {/* File Tabs Header */}
-              <div className="flex items-center bg-zinc-950/50 border-b border-zinc-800/50 overflow-x-auto scrollbar-hide">
-                 {files.map(file => (
-                   <div 
-                     key={file.id}
-                     onClick={() => handleTabClick(file.id)}
-                     onDoubleClick={() => setRenamingId(file.id)}
-                     className={`
-                       group flex items-center gap-2 px-4 py-3 text-xs font-medium cursor-pointer border-r border-zinc-800/50 min-w-[120px] max-w-[200px] select-none
-                       ${activeFileId === file.id ? 'bg-zinc-900/60 text-yellow-400 border-b-2 border-b-yellow-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'}
-                     `}
-                   >
-                     {/* File Icon */}
-                     <span className="opacity-70">📄</span>
-                     
-                     {/* Name or Rename Input */}
-                     {renamingId === file.id ? (
-                        <input 
-                          autoFocus
-                          className="bg-transparent text-white outline-none w-full"
-                          defaultValue={file.name}
-                          onBlur={(e) => handleRename(file.id, e.target.value)}
-                          onKeyDown={(e) => e.key === 'Enter' && handleRename(file.id, e.currentTarget.value)}
-                        />
-                     ) : (
-                        <span className="truncate flex-1">{file.name}</span>
-                     )}
-                     
-                     {/* Close Button */}
-                     <button 
-                       onClick={(e) => handleCloseFile(e, file.id)}
+              {/* File Tabs & Actions Toolbar */}
+              <div className="flex items-center justify-between bg-zinc-950/50 border-b border-zinc-800/50">
+                
+                {/* Scrollable Tabs Area */}
+                <div className="flex-1 flex overflow-x-auto scrollbar-hide">
+                   {files.map(file => (
+                     <div 
+                       key={file.id}
+                       onClick={() => handleTabClick(file.id)}
+                       onDoubleClick={() => setRenamingId(file.id)}
                        className={`
-                         w-5 h-5 rounded hover:bg-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
-                         ${files.length === 1 ? 'hidden' : ''}
+                         group flex items-center gap-2 px-4 py-3 text-xs font-medium cursor-pointer border-r border-zinc-800/50 min-w-[120px] max-w-[200px] select-none flex-shrink-0
+                         ${activeFileId === file.id ? 'bg-zinc-900/60 text-yellow-400 border-b-2 border-b-yellow-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900/30'}
                        `}
                      >
-                       ×
-                     </button>
-                   </div>
-                 ))}
-                 
-                 {/* Add File Button */}
-                 <button 
-                   onClick={handleAddFile}
-                   className="px-3 py-3 text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/30 transition-colors"
-                   title="New File"
-                 >
-                   +
-                 </button>
+                       <span className="opacity-70">📄</span>
+                       
+                       {renamingId === file.id ? (
+                          <input 
+                            autoFocus
+                            className="bg-transparent text-white outline-none w-full"
+                            defaultValue={file.name}
+                            onBlur={(e) => handleRename(file.id, e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleRename(file.id, e.currentTarget.value)}
+                          />
+                       ) : (
+                          <span className="truncate flex-1">{file.name}</span>
+                       )}
+                       
+                       <button 
+                         onClick={(e) => handleCloseFile(e, file.id)}
+                         className={`
+                           w-5 h-5 rounded hover:bg-zinc-700/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity
+                           ${files.length === 1 ? 'hidden' : ''}
+                         `}
+                       >
+                         ×
+                       </button>
+                     </div>
+                   ))}
+                </div>
+
+                {/* Fixed Action Buttons */}
+                <div className="flex items-center px-1 bg-zinc-950/50 h-full border-l border-zinc-800/50 z-10 shadow-[-10px_0_15px_-5px_rgba(0,0,0,0.5)]">
+                   {/* Hidden File Input */}
+                   <input 
+                     type="file" 
+                     ref={fileInputRef} 
+                     onChange={handleFileRead} 
+                     className="hidden" 
+                     accept=".sl,.txt,.js,.ts"
+                   />
+
+                   <button 
+                     onClick={handleAddFile}
+                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-yellow-400 hover:bg-zinc-900/50 rounded transition-colors"
+                     title="New File"
+                   >
+                     <span className="text-lg leading-none">+</span>
+                   </button>
+                   
+                   <div className="w-px h-5 bg-zinc-800 mx-1"></div>
+
+                   <button 
+                     onClick={triggerFileUpload}
+                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-blue-400 hover:bg-zinc-900/50 rounded transition-colors"
+                     title="Open File"
+                   >
+                     <span className="text-lg leading-none">📂</span>
+                   </button>
+
+                   <button 
+                     onClick={handleDownload}
+                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-green-400 hover:bg-zinc-900/50 rounded transition-colors"
+                     title="Save File"
+                   >
+                     <span className="text-lg leading-none">💾</span>
+                   </button>
+                </div>
               </div>
               
               <textarea
@@ -404,7 +480,7 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right column: Output - CHANGED: col-span-5 (Narrower) */}
+          {/* Right column: Output */}
           <div className="lg:col-span-5 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
             
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
@@ -432,7 +508,6 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                 {/* Error Toggle Button - CHANGED: Logic updated */}
                  <button 
                    onClick={() => setShowErrors(!showErrors)}
                    className={`
@@ -457,10 +532,7 @@ const App: React.FC = () => {
             </div>
             
             <div className="flex-1 overflow-auto p-0">
-              
-              {/* Conditional View Rendering */}
               {showErrors ? (
-                // Error View
                 <div className="p-4 space-y-2">
                    {activeErrors.length === 0 ? (
                       <div className="text-center text-zinc-500 mt-10 text-sm">
@@ -480,7 +552,6 @@ const App: React.FC = () => {
                    )}
                 </div>
               ) : (
-                // Data View
                 <>
                   {activeTab === 'symbol' && (
                      tokens.length === 0 ? (
