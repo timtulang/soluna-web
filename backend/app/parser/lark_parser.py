@@ -280,14 +280,13 @@ class TreeToDict(Transformer):
     def __default__(self, data, children, meta):
         return {"type": data, "children": children}
 
-
 # =========================================================================
 #  5. PARSER CLASS WITH ERROR FORMATTING
 # =========================================================================
 
 class LarkParser:
     def __init__(self):
-        # Using Earley as requested
+        # Using Earley
         self.lark = Lark(SOLUNA_GRAMMAR, parser='earley', lexer=SolunaAdapter)
         self.transformer = TreeToDict()
 
@@ -316,20 +315,24 @@ class LarkParser:
         else:
             unexpected_desc = "End of Input"
 
-        # 2. Format the "Expected Y" part
-        expected_names = []
+        # 2. Format the "Expected Y" part (UPDATED)
+        expected_names = set()
         for t in expected:
             # Look up friendly name, default to lowercase title if missing
             name = TERMINAL_NAMES.get(t, t.lower())
-            expected_names.append(f"'{name}'")
+            expected_names.add(f"'{name}'")
         
         # Sort for consistent display
-        expected_names.sort()
-        expected_str = ", ".join(expected_names)
+        sorted_expected = sorted(list(expected_names))
+        expected_str = ", ".join(sorted_expected)
 
         # 3. Construct Final Message
-        line = getattr(e, 'line', '?')
-        col = getattr(e, 'column', '?')
+        # Handle cases where line/col are -1 or missing (common in EOF errors)
+        line = getattr(e, 'line', -1)
+        col = getattr(e, 'column', -1)
+        
+        if line == -1: line = "?"
+        if col == -1: col = "?"
 
         error_msg = (
             f"Syntax Error at Line {line}, Col {col}: "

@@ -133,7 +133,7 @@ STATES = {
     73: State('m', [74]), 
     74: State('o', [75]), 
     75: State('s', [76]), 
-    76: State({*REGDEF['free_delim'], '}', ';', ')'}, end=True), 
+    76: State(DELIMS['mos_delim'], end=True), 
     
     # --- Keywords: 'not', 'nova' ---
     77: State('n', [78]), 
