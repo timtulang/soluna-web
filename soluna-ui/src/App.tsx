@@ -6,7 +6,7 @@ import type { ChangeEvent, KeyboardEvent } from "react";
 type Token = {
   type: string;
   value: string;
-  alias?: string; // <--- Added for Identifier Iteration
+  alias?: string; 
   line: number;
   col: number;
   start: number;
@@ -305,13 +305,17 @@ const App: React.FC = () => {
   const activeErrors = activeTab === 'symbol' ? lexerErrors : parserErrors;
   const hasErrors = activeErrors.length > 0;
 
+  // New logic: Only disable if NO errors AND NOT currently showing the error view.
+  // This allows the user to click "Hide Errors" even if the count is 0.
+  const isErrorButtonDisabled = !hasErrors && !showErrors;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-black text-zinc-100 font-sans">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-20 left-20 w-96 h-96 bg-yellow-600/10 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-20 right-20 w-96 h-96 bg-amber-700/10 rounded-full blur-3xl animate-pulse" style={{animationDelay: '1s'}}></div>
       </div>
-      <div className="relative z-10 max-w-7xl mx-auto p-6">
+      <div className="relative z-10 max-w-[90rem] mx-auto p-6">
         <header className="mb-5">
           <div className="bg-[#0c0d0d] backdrop-blur-xl border border-[#1a1a1a] rounded-2xl p-2 shadow-2xl">
             <div className="flex items-center justify-between flex-wrap gap-4">
@@ -330,11 +334,11 @@ const App: React.FC = () => {
           </div>
         </header>
 
-        {/* Main content */}
-        <div className="grid lg:grid-cols-2 gap-6">
+        {/* Main content - CHANGED: Used grid-cols-12 for better control over width ratio */}
+        <div className="grid lg:grid-cols-12 gap-6">
           
-          {/* Left column: Editor with Tabs */}
-          <div className="space-y-6">
+          {/* Left column: Editor - CHANGED: col-span-7 (Wider) */}
+          <div className="lg:col-span-7 space-y-6">
             <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
               
               {/* File Tabs Header */}
@@ -400,8 +404,8 @@ const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right column: Output Tabs */}
-          <div className="bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
+          {/* Right column: Output - CHANGED: col-span-5 (Narrower) */}
+          <div className="lg:col-span-5 bg-zinc-900/40 backdrop-blur-xl border border-zinc-800/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col h-[600px]">
             
             <div className="px-2 py-2 border-b border-zinc-800/50 flex items-center justify-between flex-shrink-0 bg-zinc-900/60">
               <div className="flex space-x-1 bg-zinc-950/50 p-1 rounded-lg">
@@ -428,7 +432,7 @@ const App: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                 {/* Error Toggle Button */}
+                 {/* Error Toggle Button - CHANGED: Logic updated */}
                  <button 
                    onClick={() => setShowErrors(!showErrors)}
                    className={`
@@ -437,11 +441,11 @@ const App: React.FC = () => {
                          ? 'bg-red-500/20 text-red-400 border-red-500/30 hover:bg-red-500/30' 
                          : hasErrors 
                             ? 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-red-400'
-                            : 'bg-zinc-800 text-zinc-600 border-zinc-800 cursor-not-allowed'}
+                            : 'bg-zinc-800/50 text-zinc-600 border-zinc-800/50 cursor-not-allowed'}
                    `}
-                   disabled={!hasErrors}
+                   disabled={isErrorButtonDisabled}
                  >
-                    {showErrors ? "Hide Errors" : `Show Errors (${activeErrors.length})`}
+                    {showErrors ? "Hide Errors" : hasErrors ? `Show Errors (${activeErrors.length})` : "No Errors"}
                  </button>
 
                  {tokens.length > 0 && (
@@ -459,7 +463,10 @@ const App: React.FC = () => {
                 // Error View
                 <div className="p-4 space-y-2">
                    {activeErrors.length === 0 ? (
-                      <div className="text-center text-zinc-500 mt-10 text-sm">No errors in this phase.</div>
+                      <div className="text-center text-zinc-500 mt-10 text-sm">
+                        <p>No errors in this phase.</p>
+                        <p className="text-xs mt-2 opacity-50">You can hide this view now.</p>
+                      </div>
                    ) : (
                       activeErrors.map((err, i) => (
                         <div key={i} className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3">
