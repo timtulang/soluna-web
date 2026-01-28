@@ -8,13 +8,13 @@ from .td import STATES
 UNFINISHED_FLUX_STATES = {245}
 
 # States 304/308 are inside a string literal.
-UNCLOSED_STRING_STATES = {304, 308}
+UNCLOSED_STRING_STATES = {309, 313}
 
 # States 298/302 are inside a char literal.
-UNCLOSED_CHAR_STATES = {298, 302}
+UNCLOSED_CHAR_STATES = {303, 305}
 
 # States 314/315 are inside a multi-line comment.
-UNCLOSED_COMMENT_STATES = {314, 315, 316}
+UNCLOSED_COMMENT_STATES = {319, 320, 321}
 
 
 def check_for_dead_end_error(last_good_active_states, current_lexeme, start_metadata):

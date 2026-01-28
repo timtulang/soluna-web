@@ -18,8 +18,8 @@ TERMINAL_NAMES = {
     
     # Literals
     'IDENTIFIER': 'identifier', 'LABEL': 'label',
-    'INT_LIT': 'integer', 'FLOAT_LIT': 'float', 
-    'STRING_LIT': 'string', 'CHAR_LIT': 'char',
+    'INT_LIT': 'int_lit', 'FLOAT_LIT': 'float_lit', 
+    'STRING_LIT': 'string_lit', 'CHAR_LIT': 'char_lit',
 
     # Symbols (Display as symbols)
     'PLUS': '+', 'MINUS': '-', 'STAR': '*', 'SLASH': '/', 'DSLASH': '//',
@@ -211,8 +211,8 @@ TOKEN_MAP = {
     'and': 'AND_WORD', 'or': 'OR_WORD', 'not': 'NOT', 
 
     'identifier': 'IDENTIFIER', 'label': 'LABEL',
-    'int': 'INT_LIT', 'float': 'FLOAT_LIT', 'double': 'FLOAT_LIT',
-    'string': 'STRING_LIT', 'char': 'CHAR_LIT',
+    'int_lit': 'INT_LIT', 'float_lit': 'FLOAT_LIT', 'double': 'FLOAT_LIT',
+    'string_lit': 'STRING_LIT', 'char_lit': 'CHAR_LIT',
     
     '+': 'PLUS', '-': 'MINUS', '*': 'STAR', '/': 'SLASH', '//': 'DSLASH',
     '%': 'MOD', '^': 'CARET',
