@@ -372,7 +372,7 @@ STATES = {
     240: State(DELIMS['float_delim'], end=True), 
     241: State(REGDEF['digit'], [242, 243, 245]), 
     242: State(DELIMS['float_delim'], end=True), 
-    243: State(REGDEF['digit'], [244]), 
+    243: State(REGDEF['digit'], [244, 245]), 
     244: State(DELIMS['float_delim'], end=True), 
     
     # --- Numerical Values (Floats) ---
