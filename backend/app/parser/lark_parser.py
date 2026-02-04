@@ -64,6 +64,7 @@ SOLUNA_GRAMMAR = r"""
 
     values: value (COMMA value)*
     value: expression
+         | input_expr
 
     table_dec: HUBBLE data_type IDENTIFIER ASSIGN LBRACE hubble_elements? RBRACE SEMICOLON -> table_declaration
 
@@ -121,11 +122,11 @@ SOLUNA_GRAMMAR = r"""
 
     warp_stmt: WARP SEMICOLON -> break_statement
 
-    io_stmt: output_stmt | input_stmt
+    io_stmt: output_stmt # | input_stmt
 
     output_stmt: (NOVA | LUMEN) LPAREN expression RPAREN SEMICOLON -> output
     
-    input_stmt: LUMINA LPAREN (expression (COMMA expression)*)? RPAREN SEMICOLON -> expression_statement
+    # input_stmt: LUMINA LPAREN (expression (COMMA expression)*)? RPAREN SEMICOLON -> expression_statement
 
     goto_stmt: LEO LABEL SEMICOLON -> goto
     
@@ -162,11 +163,12 @@ SOLUNA_GRAMMAR = r"""
                 | table_access post_unary_op?
                 | post_unary_op? IDENTIFIER
                 | IDENTIFIER post_unary_op?
-                | input_expr
+                # | input_expr
 
     unary_expr: IDENTIFIER post_unary_op
 
-    input_expr: LUMINA LPAREN (expression (COMMA expression)*)? RPAREN
+    # input_expr: LUMINA LPAREN (expression (COMMA expression)*)? RPAREN
+    input_expr: LUMINA LPAREN RPAREN
 
     func_call: IDENTIFIER LPAREN args? RPAREN
     args: expression (COMMA expression)*
