@@ -442,7 +442,7 @@ STATES = {
     297: State(DELIMS['identifier_delim'], end=True), 
     
     # --- Character Literals ---
-    302: State('\'', [303, 306]), 
+    302: State('\'', [303, 304, 306]), 
     303: State(REGDEF['ascii_298_302'], [304]), 
     304: State('\'', [305]), 
     305: State(DELIMS['most_data_type_delim'], end=True),
