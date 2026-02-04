@@ -68,6 +68,7 @@ SOLUNA_GRAMMAR = r"""
     table_dec: HUBBLE data_type IDENTIFIER ASSIGN LBRACE hubble_elements? RBRACE SEMICOLON -> table_declaration
 
     hubble_elements: hubble_element (COMMA hubble_element)*
+                   | LBRACE hubble_elements RBRACE (COMMA hubble_elements)*
 
     hubble_element: expression 
                   | func_def 
