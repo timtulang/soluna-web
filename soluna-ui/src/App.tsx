@@ -583,24 +583,28 @@ const App: React.FC = () => {
                   )}
 
                   {activeTab === 'tree' && (
-                    <div className="p-4">
-                      {parseTree ? (
-                         <div className="pl-2 pt-2">
-                           <TreeNode node={parseTree} />
+                    <div className="p-4 space-y-2">
+                       {lexerErrors.length > 0 ? (
+                         <div className="flex flex-col items-center justify-center h-full text-red-400 mt-10">
+                            <span className="text-3xl mb-2">⚠</span>
+                            <p className="font-medium">Parser did not run</p>
+                            <p className="text-sm opacity-80 mt-1">Please fix lexical errors.</p>
                          </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center h-full text-zinc-500 mt-20">
-                          <p className="text-sm font-medium">No valid parse tree available.</p>
-                          {/* UPDATED ERROR DISPLAY LOGIC */}
-                          <p className={`text-xs mt-2 ${lexerErrors.length > 0 || parserErrors.length > 0 ? "text-red-400" : "text-zinc-600"}`}>
-                            {lexerErrors.length > 0 
-                               ? "Lexer errors prevented parsing." 
-                               : parserErrors.length > 0 
-                                 ? "Unresolved parser errors."
-                                 : "Fix syntax errors to generate the tree."}
-                          </p>
-                        </div>
-                      )}
+                       ) : parserErrors.length === 0 ? (
+                          <div className="text-center text-zinc-500 mt-10 text-sm">
+                            <p>No parser errors.</p>
+                          </div>
+                       ) : (
+                          parserErrors.map((err, i) => (
+                            <div key={i} className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg flex items-start gap-3">
+                              <span className="text-red-400 mt-0.5">⚠</span>
+                              <div>
+                                <p className="text-red-300 font-medium text-xs font-mono">{err.message}</p>
+                                {err.line > 0 && <p className="text-red-400/50 text-[10px] mt-1">Line {err.line}, Col {err.col}</p>}
+                              </div>
+                            </div>
+                          ))
+                       )}
                     </div>
                   )}
                 </>
