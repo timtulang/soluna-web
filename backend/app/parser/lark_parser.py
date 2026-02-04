@@ -106,6 +106,7 @@ SOLUNA_GRAMMAR = r"""
              | local_dec
              | dec_and_init  // Updated to allow declarations as statements
              | expr_stmt
+             | func_def
              | func_return
              | empty_stmt
 
