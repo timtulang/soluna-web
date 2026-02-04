@@ -138,7 +138,8 @@ SOLUNA_GRAMMAR = r"""
 
     // --- Assignments & Expressions ---
     assignment_stmt: targets assignment_op values SEMICOLON -> assignment
-                   | targets post_unary_op SEMICOLON -> unary_statement
+                   | targets post_unary_op SEMICOLON -> post_unary_statement
+                   | post_unary_op targets SEMICOLON -> pre_unary_statement
                    | table_access ASSIGN expression SEMICOLON -> assignment
 
     targets: target (COMMA target)*
@@ -156,7 +157,9 @@ SOLUNA_GRAMMAR = r"""
     factor_value: literal
                 | func_call
                 | LPAREN expression RPAREN
-                | table_access
+                | post_unary_op? table_access
+                | table_access post_unary_op?
+                | post_unary_op? IDENTIFIER
                 | IDENTIFIER post_unary_op?
                 | input_expr
 
@@ -269,7 +272,8 @@ class TreeToDict(Transformer):
     def return_statement(self, children): return self._node("ReturnStatement", children)
     def expression_statement(self, children): return self._node("ExpressionStatement", children)
     def assignment(self, children): return self._node("Assignment", children)
-    def unary_statement(self, children): return self._node("UnaryStatement", children)
+    def pre_unary_statement(self, children): return self._node("UnaryStatement", children)
+    def post_unary_statement(self, children): return self._node("UnaryStatement", children)
     def empty_statement(self, children): return self._node("EmptyStatement", [])
 
     # Explicit Token Handlers
