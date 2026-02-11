@@ -425,7 +425,7 @@ const App: React.FC = () => {
                   <div className="bg-red-900/20 border-b border-red-900/50 p-3">
                      <div className="flex items-center gap-2 text-red-500 font-bold text-xs mb-2">
                         <IconError />
-                        {activeErrors.length} ERRORS DETECTED
+                        {activeErrors.length} ERROR(S) DETECTED
                      </div>
                      {activeErrors.map((err, i) => (
                         <div key={i} className="text-[11px] text-red-400 font-mono mb-1 pl-5 border-l-2 border-red-900/50">
@@ -442,6 +442,8 @@ const App: React.FC = () => {
                     <thead className="sticky top-0 bg-zinc-900">
                       <tr className="text-zinc-500 text-[10px] uppercase">
                          <th className="w-10 px-3 py-1 font-normal">Ln</th>
+                         {/* Added Column Header */}
+                         <th className="w-10 px-3 py-1 font-normal">Col</th>
                          <th className="px-3 py-1 font-normal">Type</th>
                          <th className="px-3 py-1 font-normal">Value</th>
                       </tr>
@@ -450,6 +452,8 @@ const App: React.FC = () => {
                        {tokens.map((t, i) => (
                          <tr key={i} className="hover:bg-zinc-900/50 border-b border-zinc-900/30">
                            <td className="px-3 py-1 text-zinc-600">{t.line}</td>
+                           {/* Added Column Data */}
+                           <td className="px-3 py-1 text-zinc-600">{t.col}</td>
                            <td className="px-3 py-1 font-bold" style={{ color: getColor(t.type) }}>{t.type}</td>
                            <td className="px-3 py-1 text-zinc-400 break-all">{t.value}</td>
                          </tr>
@@ -512,7 +516,7 @@ const App: React.FC = () => {
             </div>
             {errors.length > 0 && (
                <div className="flex items-center gap-1 px-2 py-0.5 bg-black/10 rounded">
-                  <span>!</span> {errors.length} Problems
+                  <span>!</span> {errors.length} Error(s)
                </div>
             )}
          </div>
@@ -524,7 +528,7 @@ const App: React.FC = () => {
                <button onClick={() => setShowRightSidebar(!showRightSidebar)} className={`hover:bg-black/10 px-1 rounded ${!showRightSidebar && 'opacity-50'}`}>[Output]</button>
             </div>
             <span>Ln {tokens.length}</span>
-            <span>Soluna 1.0</span>
+            <span>Soluna 0.49</span>
          </div>
       </div>
 
