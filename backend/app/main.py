@@ -4,8 +4,13 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import json
 import re  
+
+# --- Imports ---
 from app.lexer.lexer import Lexer 
-from app.parser.lark_parser import LarkParser  # <--- Updated Import
+
+from app.parser.parser import EarleyParser
+from app.parser.grammar import SOLUNA_GRAMMAR
+from app.parser.adapter import adapter
 
 app = FastAPI()
 
@@ -19,13 +24,14 @@ app.add_middleware(
 
 def run_pipeline(code: str):
     """
-    Runs Lexer -> Identifier Iteration -> Lark Parser
+    Runs Lexer -> Identifier Iteration -> Earley Parser (Custom)
     """
     # 1. Run Lexer
     lexer = Lexer(code)
+    # tokens_from_lexer is the list of tuples: [((val, type), meta), ...]
     tokens_from_lexer, lexer_errors = lexer.tokenize_all()
 
-    # 2. Convert to Dictionaries
+    # 2. Convert to Dictionaries (For Frontend coloring/metadata)
     processed_tokens = []
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
@@ -110,26 +116,37 @@ def run_pipeline(code: str):
         
     if last_end < len(code): process_gap(last_end, len(code))
 
-    # 4. Run Parser (Lark)
+    # 4. Run Parser (Custom Earley Implementation)
     parse_tree = None
     parser_error = None
     
     # Only run parser if lexer succeeded and we have tokens
-    if len(lexer_errors) == 0 and len(processed_tokens) > 0:
+    if len(lexer_errors) == 0 and len(tokens_from_lexer) > 0:
         try:
-            # Instantiate the LarkParser wrapper
-            parser = LarkParser()
+            # A. Adapt: Convert Lexer tokens to Parser tokens
+            # This handles type mapping (kai_lit -> integer) and removes comments
+            clean_parser_tokens = adapter(tokens_from_lexer)
+
+            # B. Instantiate Parser
+            parser = EarleyParser(SOLUNA_GRAMMAR, 'program')
             
-            # Pass the list of token dictionaries to the parser
-            # The adapter in lark_parser.py will read this list
-            root = parser.parse(processed_tokens)
+            # C. Parse
+            # Note: Returns True (valid) or False (invalid)
+            is_valid = parser.parse(clean_parser_tokens)
             
-            # The result is already a dictionary suitable for the frontend
-            parse_tree = root
-            
+            if is_valid:
+                # Currently, our Earley parser is a Recognizer (checks validity).
+                # We return a success status object for the frontend.
+                parse_tree = {
+                    "type": "Program",
+                    "status": "valid",
+                    "message": "Syntax is correct"
+                }
+            else:
+                # If parsing failed but no exception was raised (just invalid grammar)
+                parser_error = "Syntax Error: The code does not match the Soluna grammar."
+
         except Exception as e:
-            # Capture the error message for the frontend
-            # Lark errors can be verbose, so you might want to trim them
             parser_error = str(e).strip()
 
     return final_tokens, lexer_errors, parse_tree, parser_error

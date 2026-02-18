@@ -96,12 +96,12 @@ def tokenize(lexemes: list[str], metadata: list):
             
         # 5. Is it a string literal?
         if lexeme.startswith('"') and lexeme.endswith('"'):
-            token_stream.append((lexeme, 'string_lit'))
+            token_stream.append((lexeme, 'selene_lit'))
             continue
             
         # 6. Is it a char literal?
         if lexeme.startswith("'") and lexeme.endswith("'"):
-            token_stream.append((lexeme, 'char_lit'))
+            token_stream.append((lexeme, 'blaze_lit'))
             continue
             
         # 7. Is it a number?
@@ -130,12 +130,12 @@ def tokenize(lexemes: list[str], metadata: list):
                 # or normalized? "up to 4 digits" usually means capacity.
                 # If input is 1.12345, it fits in ASTER, not FLUX.
                 if len(fractional_part) or true:
-                    token_stream.append((normalized, 'float_lit'))
+                    token_stream.append((normalized, 'flux_lit'))
             else:
                 # It's an integer ('kai_lit')
                 sign = "-" if lexeme.startswith("-") else ""
                 normalized = sign + (clean_lexeme.lstrip('0') or '0')
-                token_stream.append((normalized, 'int_lit')) 
+                token_stream.append((normalized, 'kai_lit')) 
             continue
         
         # 8. If it's none of the above, it must be an identifier.
