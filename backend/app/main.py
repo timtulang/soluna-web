@@ -5,12 +5,18 @@ from fastapi.middleware.cors import CORSMiddleware
 import json
 import re  
 
-# --- Imports ---
+# --- Custom Modules ---
 from app.lexer.lexer import Lexer 
 
+# Parser Modules
 from app.parser.parser import EarleyParser
 from app.parser.grammar import SOLUNA_GRAMMAR
 from app.parser.adapter import adapter
+from app.parser.tree_builder import ParseTreeBuilder
+
+# Semantic Modules
+from app.semantics.analyzer import SemanticAnalyzer
+from app.semantics.errors import SemanticError
 
 app = FastAPI()
 
@@ -24,14 +30,22 @@ app.add_middleware(
 
 def run_pipeline(code: str):
     """
-    Runs Lexer -> Identifier Iteration -> Earley Parser (Custom)
+    Runs the full compiler pipeline:
+    1. Lexer (Raw text -> Tokens)
+    2. Adapter (Lexer Tokens -> Parser Tokens)
+    3. Earley Parser (Syntax Validation)
+    4. Tree Builder (Chart -> CST)
+    5. Semantic Analyzer (Logic & Scope Check)
     """
-    # 1. Run Lexer
+    # -------------------------------------------------------------------------
+    # 1. Lexical Analysis
+    # -------------------------------------------------------------------------
     lexer = Lexer(code)
-    # tokens_from_lexer is the list of tuples: [((val, type), meta), ...]
     tokens_from_lexer, lexer_errors = lexer.tokenize_all()
 
-    # 2. Convert to Dictionaries (For Frontend coloring/metadata)
+    # -------------------------------------------------------------------------
+    # 2. Frontend Data Prep (Coloring, Identifiers, Whitespace)
+    # -------------------------------------------------------------------------
     processed_tokens = []
     for token_pair, meta in tokens_from_lexer:
         value, token_type = token_pair
@@ -44,23 +58,18 @@ def run_pipeline(code: str):
             "col": meta['col']    
         })
 
-    # --- Identifier Iteration Logic ---
-    # Assigns identifier1, identifier2, etc. to unique identifiers for frontend coloring
+    # Identifier Aliasing (for rainbow highlighting)
     identifier_map = {}
     id_counter = 1
-    
     for token in processed_tokens:
         if token['type'] == 'identifier':
             original_val = token['value']
-            # If we haven't seen this identifier yet, assign a new ID
             if original_val not in identifier_map:
                 identifier_map[original_val] = f"identifier{id_counter}"
                 id_counter += 1
-            
-            # Attach the alias to the token
             token['alias'] = identifier_map[original_val]
 
-    # 3. Gap Filling (for frontend highlighting of whitespace/errors)
+    # Gap Filling (restoring whitespace for the UI)
     final_tokens = []
     last_end = 0
     current_line = 1
@@ -116,37 +125,53 @@ def run_pipeline(code: str):
         
     if last_end < len(code): process_gap(last_end, len(code))
 
-    # 4. Run Parser (Custom Earley Implementation)
+    # -------------------------------------------------------------------------
+    # 3. Parsing & Semantics
+    # -------------------------------------------------------------------------
     parse_tree = None
     parser_error = None
     
-    # Only run parser if lexer succeeded and we have tokens
+    # Only proceed if Lexer gave us clean tokens
     if len(lexer_errors) == 0 and len(tokens_from_lexer) > 0:
         try:
-            # A. Adapt: Convert Lexer tokens to Parser tokens
-            # This handles type mapping (kai_lit -> integer) and removes comments
+            # A. Adapter: Lexer Tokens -> Parser Tokens
             clean_parser_tokens = adapter(tokens_from_lexer)
 
-            # B. Instantiate Parser
+            # B. Syntax Parsing (Earley Algorithm)
             parser = EarleyParser(SOLUNA_GRAMMAR, 'program')
-            
-            # C. Parse
-            # Note: Returns True (valid) or False (invalid)
             is_valid = parser.parse(clean_parser_tokens)
             
             if is_valid:
-                # Currently, our Earley parser is a Recognizer (checks validity).
-                # We return a success status object for the frontend.
-                parse_tree = {
-                    "type": "Program",
-                    "status": "valid",
-                    "message": "Syntax is correct"
-                }
+                # C. Tree Construction
+                # Reconstructs the CST from the Earley Chart
+                builder = ParseTreeBuilder(parser, clean_parser_tokens)
+                parse_tree = builder.build()
+
+                # D. Semantic Analysis
+                # Checks for logic errors (e.g. redeclaration)
+                if parse_tree:
+                    analyzer = SemanticAnalyzer()
+                    try:
+                        analyzer.analyze(parse_tree)
+                    except SemanticError as se:
+                        # Convert Semantic Logic Error into a Frontend Error
+                        lexer_errors.append({
+                            "type": "SEMANTIC_ERROR",
+                            "message": se.message,
+                            "line": se.line,
+                            "col": se.col,
+                            "start": 0, "end": 0 # Logic errors often span multiple tokens, so we default 0
+                        })
+                        # IMPORTANT: Invalid semantics means the code is broken.
+                        # Hide the success tree so the UI shows the error state.
+                        parse_tree = None
             else:
-                # If parsing failed but no exception was raised (just invalid grammar)
+                # This should technically be caught by parser.parse()'s exception handler,
+                # but if it returns False without raising, we catch it here.
                 parser_error = "Syntax Error: The code does not match the Soluna grammar."
 
         except Exception as e:
+            # Captures Syntax Errors thrown by EarleyParser._handle_error
             parser_error = str(e).strip()
 
     return final_tokens, lexer_errors, parse_tree, parser_error
