@@ -209,8 +209,10 @@ SOLUNA_GRAMMAR = {
         Production('factor_value', ['(', 'expression', ')'])
     ],
     'identifier_tail': [
-        Production('identifier_tail', ['table_index']),
+        # Reuse nav_tail logic here (0 or more indices)
+        Production('identifier_tail', ['table_index', 'identifier_tail']),
         Production('identifier_tail', []) 
+        # OR simply: Production('identifier_tail', ['nav_tail']) if types align
     ],
 
     # 11. Literals
@@ -253,10 +255,10 @@ SOLUNA_GRAMMAR = {
         Production('var_init_no_semi', ['identifier', 'multi_identifiers', 'value_init'])
     ],
     'table_nav': [
-        Production('table_nav', ['identifier', 'table_index', '=', 'expression', ';'])
+        Production('table_nav', ['identifier', 'table_index', 'nav_tail', '=', 'expression', ';'])
     ],
     'table_index': [
-        Production('table_index', ['[', 'index_val', ']', 'nav_tail'])
+        Production('table_index', ['[', 'index_val', ']'])
     ],
     'nav_tail': [
         Production('nav_tail', ['table_index', 'nav_tail']),
@@ -264,6 +266,7 @@ SOLUNA_GRAMMAR = {
     ],
     'index_val': [
         Production('index_val', ['integer']),
+        Production('index_val', ['identifier']),
         Production('index_val', ['string'])
     ],
 

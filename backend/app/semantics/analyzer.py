@@ -1,24 +1,20 @@
+# app/semantics/analyzer.py
 from .symbol_table import SymbolTable
 from .errors import SemanticError
 
 class SemanticAnalyzer:
     def __init__(self):
         self.symbols = SymbolTable()
-        self.loop_depth = 0          # Tracks if we are inside a loop (for 'warp')
-        self.current_func_type = None # Tracks current function return type (for 'zara')
 
     def analyze(self, tree):
         self.symbols = SymbolTable()
-        self.loop_depth = 0
-        self.current_func_type = None
         self.visit(tree)
 
     def visit(self, node):
-        if not isinstance(node, dict): return
+        if not node: return
         
-        # Dynamic dispatch based on node type
-        node_type = node.get("type")
-        method_name = f"visit_{node_type}"
+        # Dynamic dispatch based on rule name
+        method_name = f"visit_{node['type']}"
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)
 
@@ -27,174 +23,83 @@ class SemanticAnalyzer:
             for child in node["children"]:
                 self.visit(child)
 
-    # =========================================================================
-    #  DECLARATIONS & SCOPING
-    # =========================================================================
+    # --- Rule Handlers ---
 
-    def visit_Program(self, node):
+    def visit_program(self, node):
         self.generic_visit(node)
 
-    def visit_Block(self, node):
-        # Rule: Blocks create new scope (unless it's a function body which is handled separately)
-        # However, looking at Grammar, 'statements' -> Block.
-        # We generally want explicit scoping for Ifs and Loops.
-        # For raw blocks, we can push scope or rely on parent container.
-        # Let's rely on parents (IfStatement, etc.) to push scope to avoid double scoping.
-        self.generic_visit(node)
-
-    def visit_VariableDeclaration(self, node):
-        # Children: [mutability?, data_type, var_init]
+    def visit_var_dec(self, node):
+        # Rule: var_dec -> mutability data_type var_init
         
-        is_const = self._has_token(node, "ZETA")
-        is_local = self._has_token(node, "LOCAL") # Although Grammar puts LOCAL in 'local_dec' rule
-        
-        # Extract Type
-        type_node = self._find_child_by_type(node, "data_type")
-        var_type = self._extract_source_text(type_node) if type_node else "let"
+        # 1. Check Mutability
+        is_const = False
+        mutability_node = self._find_child(node, "mutability")
+        if mutability_node and self._has_token(mutability_node, "zeta"):
+            is_const = True
 
-        # Extract Initialization
-        init_node = self._find_child_by_type(node, "VarInitialization")
+        # 2. Get Data Type
+        type_node = self._find_child(node, "data_type")
+        var_type = self._extract_token_value(type_node)
+
+        # 3. Visit Initialization
+        init_node = self._find_child(node, "var_init")
         if init_node:
             self._handle_var_init(init_node, var_type, is_const)
 
     def _handle_var_init(self, node, var_type, is_const):
-        # var_init -> IDENTIFIER multi_identifiers value_init?
+        # Rule: var_init -> identifier multi_identifiers value_init ;
         
-        # 1. Main Identifier
-        ident_token = self._find_child_by_type(node, "Identifier")
+        ident_token = self._find_token(node, "identifier")
         if ident_token:
-            name = ident_token["value"]
-            # We can't easily get line/col from the dict tree unless we preserved it.
-            # Assuming Token nodes have it or we catch basic errors.
-            self.symbols.declare(name, var_type, is_const, 0, 0)
+            var_name = ident_token["value"]
+            line = ident_token["line"]
+            col = ident_token["col"]
 
-        # 2. Multi Identifiers (e.g. kai a, b, c)
-        multi_node = self._find_child_by_type(node, "multi_identifiers")
-        if multi_node:
-            # Recursively find identifiers
-            # (Simplified for brevity, would iterate children)
-            pass
+            # Register in Symbol Table
+            self.symbols.declare(var_name, var_type, is_const, line, col)
 
-        # 3. Type Checking of Value
-        # value_init -> ASSIGN values
-        # We need to check if the assigned value matches 'var_type'
-        # This is complex because 'value' can be an expression tree.
-        # For now, we enforce CONST checks on reassignment.
-
-    def visit_Assignment(self, node):
-        # Assignment -> targets assignment_op values
+    def visit_assignment_statement(self, node):
+        # Rule: assignment_statement -> identifier ...
         
-        targets = self._find_child_by_type(node, "targets")
-        if not targets: return
+        ident_token = self._find_token(node, "identifier")
+        if not ident_token:
+            return 
+            
+        var_name = ident_token["value"]
+        line = ident_token["line"]
+        col = ident_token["col"]
 
-        # Iterate all targets (a, b = 1, 2)
-        for child in targets.get("children", []):
-            if child["type"] == "Identifier":
-                var_name = child["value"]
-                symbol = self.symbols.lookup(var_name)
+        # Lookup
+        symbol = self.symbols.lookup(var_name)
 
-                # Rule: Variable must be declared
-                if not symbol:
-                    raise SemanticError(f"Variable '{var_name}' has not been declared.")
+        # Check 1: Existence
+        if not symbol:
+            raise SemanticError(f"Variable '{var_name}' has not been declared.", line, col)
 
-                # Rule: Constant immutability [cite: 1497]
-                if symbol["is_const"]:
-                    raise SemanticError(f"Cannot reassign constant (zeta) variable '{var_name}'.")
+        # Check 2: Mutability
+        if symbol["is_const"]:
+            raise SemanticError(f"Cannot reassign constant variable '{var_name}'.", line, col)
 
-    # =========================================================================
-    #  FUNCTIONS
-    # =========================================================================
-
-    def visit_FunctionDefinition(self, node):
-        # func_def: func_data_type IDENTIFIER LPAREN parameters? RPAREN statements
-        
-        # 1. Extract Signature
-        ret_type_node = self._find_child_by_type(node, "func_data_type")
-        ret_type = self._extract_source_text(ret_type_node)
-        
-        ident_node = self._find_child_by_type(node, "Identifier")
-        func_name = ident_node["value"]
-
-        params = []
-        # (Parameter extraction logic would go here)
-
-        # 2. Declare Function in Current Scope (No Hoisting support means we declare here)
-        self.symbols.declare_function(func_name, ret_type, params, 0, 0)
-
-        # 3. Enter Function Scope
-        self.symbols.enter_scope()
-        
-        # Set context for 'zara' checks
-        prev_func_type = self.current_func_type
-        self.current_func_type = ret_type
-
-        # 4. Visit Body
-        block = self._find_child_by_type(node, "Block")
-        if block: self.visit(block)
-
-        # 5. Cleanup
-        self.current_func_type = prev_func_type
-        self.symbols.exit_scope()
-
-    def visit_ReturnStatement(self, node):
-        # Rule: Return type must match function declaration [cite: 2098]
-        if self.current_func_type is None:
-            raise SemanticError("Return statement 'zara' found outside of function.")
-        
-        # If function is void, ensure no expression
-        has_expr = len(node.get("children", [])) > 0
-        
-        if self.current_func_type == "void" and has_expr:
-            raise SemanticError("Void function cannot return a value.")
-        
-        # (Detailed type checking of the returned expression would happen here)
-
-    # =========================================================================
-    #  CONTROL FLOW & LOOPS
-    # =========================================================================
-
-    def visit_WhileLoop(self, node):
-        self._visit_loop(node)
-
-    def visit_ForLoop(self, node):
-        self._visit_loop(node)
-
-    def _visit_loop(self, node):
-        self.loop_depth += 1
-        self.symbols.enter_scope() # Loops create a new scope block
-        self.generic_visit(node)
-        self.symbols.exit_scope()
-        self.loop_depth -= 1
-
-    def visit_BreakStatement(self, node):
-        # Rule: 'warp' only allowed inside loops 
-        if self.loop_depth <= 0:
-            raise SemanticError("'warp' statement found outside of a loop.")
-
-    # =========================================================================
-    #  HELPERS
-    # =========================================================================
-
-    def _find_child_by_type(self, node, type_name):
-        if "children" not in node: return None
-        for child in node["children"]:
-            if isinstance(child, dict) and child.get("type") == type_name:
+    # --- Helpers ---
+    
+    def _find_child(self, node, type_name):
+        for child in node.get("children", []):
+            if child.get("type") == type_name:
                 return child
         return None
 
-    def _has_token(self, node, token_value):
-        # Recursively search for a token string (e.g. "zeta")
-        if node.get("value") == token_value:
-            return True
-        if "children" in node:
-            for child in node["children"]:
-                if self._has_token(child, token_value): return True
-        return False
+    def _find_token(self, node, token_type):
+        for child in node.get("children", []):
+            if child.get("type") == "TOKEN" and child.get("token_type") == token_type:
+                return child
+        return None
 
-    def _extract_source_text(self, node):
-        # Rudimentary text extractor for types like "kai" or "void"
-        if not node: return ""
-        if node.get("value"): return node["value"]
-        if node.get("children"):
-            return self._extract_source_text(node["children"][0])
-        return ""
+    def _has_token(self, node, token_type):
+        return self._find_token(node, token_type) is not None
+
+    def _extract_token_value(self, node):
+        if node.get("type") == "TOKEN":
+            return node["token_type"]
+        if "children" in node and node["children"]:
+            return self._extract_token_value(node["children"][0])
+        return None
