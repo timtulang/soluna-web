@@ -73,8 +73,8 @@ class SemanticAnalyzer:
             val_node = values[i] if i < len(values) else None
             final_type = declared_type
             
-            # Check if the assigned value is a lumina() input
             is_lumina = val_node and val_node.get("type") == "value" and self._has_token(val_node, "lumina")
+            static_val = None
 
             if is_const and is_lumina:
                 raise SemanticError(f"Constant variable '{var_name}' cannot be initialized with runtime input 'lumina()'.", line, col)
@@ -85,18 +85,21 @@ class SemanticAnalyzer:
                         final_type = 'let'
                     else:
                         final_type = self._get_expression_type(val_node)
+                        static_val = self._evaluate_static_string(val_node)
                         if final_type == 'unknown': final_type = 'zeru' 
                 else:
                     final_type = 'zeru'
             elif val_node and not is_lumina:
                 expr_type = self._get_expression_type(val_node)
+                static_val = self._evaluate_static_string(val_node)
                 if not self._check_coercion(declared_type, expr_type, val_node):
                      raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{declared_type}'.", line, col)
 
             self.symbols.declare(var_name, {
                 "category": "variable",
                 "type": final_type,
-                "is_const": is_const
+                "is_const": is_const,
+                "static_value": static_val
             }, line, col, is_local=is_local)
 
     # ==========================================
@@ -162,7 +165,8 @@ class SemanticAnalyzer:
                     expr_type = self._get_expression_type(val_node)
                     if not self._check_coercion(symbol["type"], expr_type, val_node):
                         raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{symbol['type']}'.", line, col)
-                
+                    symbol["static_value"] = self._evaluate_static_string(val_node)
+
     def visit_statements(self, node):
         self.generic_visit(node)
 
@@ -184,6 +188,17 @@ class SemanticAnalyzer:
                 self.symbols.exit_scope()
             else:
                 self.visit(child)
+
+    def visit_conditions(self, node):
+        if not node: return
+        
+        # Check if the condition directly contains an expression
+        expr_node = self._find_child(node, "expression")
+        if expr_node:
+            self._get_expression_type(expr_node)
+        else:
+            # If it is a nested condition like ( conditions ), keep traversing
+            self.generic_visit(node)
 
     def visit_loop_while_statement(self, node):
         self.symbols.enter_loop()
@@ -491,7 +506,7 @@ class SemanticAnalyzer:
             for child in node["children"]:
                 if child and child.get("type") in ["hubble_elements", "hubble_element_tail"]:
                     self._validate_hubble_elements(child, elem_type, line, col)
-                    
+
     def visit_table_nav(self, node):
         ident = self._find_token(node, "identifier")
         if ident:
@@ -638,6 +653,9 @@ class SemanticAnalyzer:
             if tt in ["integer", "float"]:
                 return str(node.get("value"))
             if tt == "identifier":
+                sym = self.symbols.lookup(node.get("value"))
+                if sym and sym.get("static_value") is not None:
+                    return str(sym["static_value"])
                 return None
             return ""
         

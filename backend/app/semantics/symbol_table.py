@@ -42,20 +42,13 @@ class SymbolTable:
              raise SemanticError(f"Invalid identifier format '{name}'. Must start with lowercase/underscore.", line, col)
 
     def declare(self, name, symbol_info, line, col, is_local=False):
-        """
-        Registers a variable.
-        - If is_local=True: Registers in the CURRENT block scope.
-        - If is_local=False: Registers in the GLOBAL scope (Index 0).
-        """
         self.validate_identifier(name, line, col)
         
-        # Determine target scope based on "Global by Default" rule
-        if is_local:
-            target_scope = self.scopes[-1] # Current Scope
-        else:
-            target_scope = self.scopes[0]  # Global Scope
+        target_scope = self.scopes[-1] if is_local else self.scopes[0]
 
-        # Check for uniqueness in the TARGET scope
+        if name in self.scopes[-1]:
+            raise SemanticError(f"Identifier '{name}' is already declared in this scope.", line, col)
+
         if name in target_scope:
             raise SemanticError(f"Identifier '{name}' is already declared in this scope.", line, col)
             
