@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 
-// --- Types (Same as before) ---
+// --- Types ---
 
 type Token = {
   type: string;
@@ -83,7 +83,7 @@ const getColor = (rawType: string): string => {
   return "#a1a1aa";
 };
 
-// --- Icons (Same as before) ---
+// --- Icons ---
 
 const IconFile = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -113,6 +113,11 @@ const IconCheck = () => (
     <path d="M20 6L9 17l-5-5"/>
   </svg>
 );
+const IconPlay = () => (
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+    <path d="M4 2v12l10-6z"/>
+  </svg>
+);
 
 // --- Main App Component ---
 
@@ -132,11 +137,14 @@ const App: React.FC = () => {
   const [activeRightTab, setActiveRightTab] = useState<'lexer' | 'parser'>('lexer');
   const [activeTerminalTab, setActiveTerminalTab] = useState<'problems' | 'output' | 'terminal'>('problems');
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
+  
+  // --- Compilation State ---
+  const [autoCompile, setAutoCompile] = useState(true);
 
-  // --- Resizing State (NEW) ---
+  // --- Resizing State ---
   const [leftWidth, setLeftWidth] = useState(240);
   const [rightWidth, setRightWidth] = useState(320);
-  const [terminalHeight, setTerminalHeight] = useState(192); // 12rem
+  const [terminalHeight, setTerminalHeight] = useState(192);
   
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingRight, setIsResizingRight] = useState(false);
@@ -149,7 +157,7 @@ const App: React.FC = () => {
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- WebSocket Setup (Unchanged) ---
+  // --- WebSocket Setup ---
   useEffect(() => {
     let ws: WebSocket;
     function connect() {
@@ -167,7 +175,6 @@ const App: React.FC = () => {
           
           if (data.parseTree) {
              setParseTree(data.parseTree);
-             console.log("🌳 Parse Tree:", data.parseTree); 
           } else if (data.errors && data.errors.length > 0) {
              setParseTree(null);
           }
@@ -179,11 +186,11 @@ const App: React.FC = () => {
     return () => { wsRef.current?.close(); };
   }, []);
 
-  // --- Resizing Logic (NEW) ---
+  // --- Resizing Logic ---
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizingLeft) {
-        const newWidth = Math.max(150, Math.min(e.clientX, 600)); // Min 150px, Max 600px
+        const newWidth = Math.max(150, Math.min(e.clientX, 600)); 
         setLeftWidth(newWidth);
       }
       if (isResizingRight) {
@@ -191,8 +198,7 @@ const App: React.FC = () => {
         setRightWidth(newWidth);
       }
       if (isResizingTerminal) {
-        // Calculate height from bottom
-        const newHeight = Math.max(100, Math.min(document.body.clientHeight - e.clientY - 24, 600)); // 24 is status bar height
+        const newHeight = Math.max(100, Math.min(document.body.clientHeight - e.clientY - 24, 600)); 
         setTerminalHeight(newHeight);
       }
     };
@@ -219,9 +225,10 @@ const App: React.FC = () => {
   const startResizingRight = () => { setIsResizingRight(true); document.body.style.cursor = 'col-resize'; };
   const startResizingTerminal = () => { setIsResizingTerminal(true); document.body.style.cursor = 'row-resize'; };
 
+  // --- Helper Functions ---
+  function triggerAnalysis(code: string, force: boolean = false) {
+    if (!autoCompile && !force) return;
 
-  // --- Helper Functions (Trigger Analysis, File handling) ---
-  function triggerAnalysis(code: string) {
     if (sendTimer.current) clearTimeout(sendTimer.current);
     sendTimer.current = setTimeout(() => {
       if (code.trim() === "") {
@@ -232,6 +239,13 @@ const App: React.FC = () => {
       }
     }, 200);
   }
+
+  // Trigger analysis automatically if the user flips the toggle back on
+  useEffect(() => {
+    if (autoCompile) {
+      triggerAnalysis(files.find(f => f.id === activeFileId)?.content || '', true);
+    }
+  }, [autoCompile]);
 
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
   const lineCount = activeFile.content.split('\n').length;
@@ -259,26 +273,24 @@ const App: React.FC = () => {
     const newId = Date.now().toString();
     setFiles([...files, { id: newId, name: `script_${files.length}.sl`, content: '' }]);
     setActiveFileId(newId);
-    triggerAnalysis('');
+    triggerAnalysis('', true);
   }
 
   function handleCloseFile(e: React.MouseEvent, id: string) {
     e.stopPropagation();
     if (files.length === 1) {
         setFiles([{...files[0], content: ''}]);
-        triggerAnalysis('');
+        triggerAnalysis('', true);
         return;
     }
     const newFiles = files.filter(f => f.id !== id);
     setFiles(newFiles);
     if (activeFileId === id) {
         setActiveFileId(newFiles[0].id);
-        triggerAnalysis(newFiles[0].content);
+        triggerAnalysis(newFiles[0].content, true);
     }
   }
 
-  const saveFile = () => { /* ... existing logic ... */ };
-  const saveFileAs = () => { /* ... existing logic ... */ };
   const openFile = () => { fileInputRef.current?.click(); setMenuOpen(null); };
   const handleFileRead = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -289,7 +301,7 @@ const App: React.FC = () => {
       const newId = Date.now().toString();
       setFiles([...files, { id: newId, name: file.name, content }]);
       setActiveFileId(newId);
-      triggerAnalysis(content);
+      triggerAnalysis(content, true);
     };
     reader.readAsText(file);
     if (fileInputRef.current) fileInputRef.current.value = '';
@@ -301,7 +313,6 @@ const App: React.FC = () => {
     }
   };
 
-  // --- Derived Data Processing ---
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const semanticErrors = errors.filter(e => e.type === 'SEMANTIC_ERROR');
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR' && e.type !== 'SEMANTIC_ERROR');
@@ -328,13 +339,32 @@ const App: React.FC = () => {
               <div className="h-px bg-zinc-800 my-1"></div>
               <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors" onClick={openFile}>Open File...</button>
               <div className="h-px bg-zinc-800 my-1"></div>
-              <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors" onClick={() => {}}>Save</button>
-              <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors" onClick={() => {}}>Save As...</button>
-              <div className="h-px bg-zinc-800 my-1"></div>
               <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors" onClick={() => window.location.reload()}>Exit</button>
             </div>
           )}
         </div>
+
+        {/* --- Compilation Controls --- */}
+        <div className="flex items-center gap-4 ml-6">
+          <button 
+            onClick={() => triggerAnalysis(activeFile.content, true)}
+            className="flex items-center gap-1.5 px-3 py-1 bg-yellow-500 text-black hover:bg-yellow-400 font-bold rounded-sm text-[11px] uppercase tracking-wider transition-colors shadow-sm"
+            title="Run Compiler Pipeline"
+          >
+            <IconPlay /> Run
+          </button>
+          
+          <label className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-zinc-400 cursor-pointer hover:text-zinc-200 transition-colors">
+            <input 
+              type="checkbox" 
+              checked={autoCompile} 
+              onChange={(e) => setAutoCompile(e.target.checked)}
+              className="accent-yellow-500 cursor-pointer"
+            />
+            Auto-Compile
+          </label>
+        </div>
+
         <input type="file" ref={fileInputRef} onChange={handleFileRead} className="hidden" />
         <div className="flex-1"></div>
         <div className="text-[11px] text-zinc-600 font-mono">SOLUNA DEV ENVIRONMENT</div>
@@ -361,7 +391,7 @@ const App: React.FC = () => {
                 {files.map(f => (
                   <div 
                     key={f.id} 
-                    onClick={() => { setActiveFileId(f.id); triggerAnalysis(f.content); }}
+                    onClick={() => { setActiveFileId(f.id); triggerAnalysis(f.content, true); }}
                     className={`flex items-center gap-2 px-6 py-1.5 cursor-pointer text-[13px] border-l-2 ${activeFileId === f.id ? 'bg-zinc-900 text-yellow-500 border-yellow-500' : 'border-transparent text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200'}`}
                   >
                     <IconFile />
@@ -370,7 +400,6 @@ const App: React.FC = () => {
                 ))}
               </div>
             </div>
-            {/* Left Resizer Handle */}
             <div 
                 className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-yellow-500/50 z-10"
                 onMouseDown={startResizingLeft}
@@ -386,7 +415,7 @@ const App: React.FC = () => {
               {files.map(file => (
                 <div 
                   key={file.id}
-                  onClick={() => { setActiveFileId(file.id); triggerAnalysis(file.content); }}
+                  onClick={() => { setActiveFileId(file.id); triggerAnalysis(file.content, true); }}
                   className={`
                     group flex items-center gap-2 px-4 min-w-[120px] max-w-[200px] cursor-pointer text-[13px] border-r border-zinc-900
                     ${activeFileId === file.id ? 'bg-black text-yellow-500 border-t-2 border-t-yellow-500' : 'bg-zinc-950 text-zinc-500 border-t-2 border-t-transparent hover:bg-zinc-900'}
@@ -426,7 +455,6 @@ const App: React.FC = () => {
                     className="bg-zinc-950 border-t border-zinc-800 flex flex-col shrink-0 relative"
                     style={{ height: terminalHeight }}
                 >
-                    {/* Terminal Resizer Handle */}
                     <div 
                         className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-yellow-500/50 z-10"
                         onMouseDown={startResizingTerminal}
@@ -497,7 +525,6 @@ const App: React.FC = () => {
             className="bg-zinc-950 border-l border-zinc-900 flex flex-col shrink-0 relative"
             style={{ width: rightWidth }}
           >
-             {/* Right Resizer Handle */}
              <div 
                 className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-yellow-500/50 z-10"
                 onMouseDown={startResizingRight}
@@ -617,7 +644,6 @@ const App: React.FC = () => {
          </div>
          
          <div className="flex items-center gap-4">
-             {/* Layout Toggles */}
             <div className="flex gap-1 border-r border-black/10 pr-4 mr-1">
                <button onClick={() => setShowLeftSidebar(!showLeftSidebar)} className={`hover:bg-black/10 px-1 rounded ${!showLeftSidebar && 'opacity-50'}`}>[Sidebar]</button>
                <button onClick={() => setShowTerminal(!showTerminal)} className={`hover:bg-black/10 px-1 rounded ${!showTerminal && 'opacity-50'}`}>[Terminal]</button>

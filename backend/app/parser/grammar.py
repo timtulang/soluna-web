@@ -31,18 +31,13 @@ SOLUNA_GRAMMAR = {
     # Recursive definition: global_dec is either a declaration AND more declarations,
     # or it's nothing (lambda/epsilon).
     'global_dec': [
-        Production('global_dec', ['dec_and_init', 'global_dec_tail']),
-        Production('global_dec', []) # Base case for recursion
-    ],
-    'global_dec_tail': [
-        Production('global_dec_tail', ['global_dec']),
-        Production('global_dec_tail', []) 
+        Production('global_dec', ['dec_and_init', 'global_dec']),
+        Production('global_dec', []) 
     ],
     'dec_and_init': [
         Production('dec_and_init', ['var_dec']),
         Production('dec_and_init', ['table_dec'])
     ],
-
     # 3. Variables & Types
     'var_dec': [
         Production('var_dec', ['mutability', 'data_type', 'var_init'])
@@ -98,14 +93,9 @@ SOLUNA_GRAMMAR = {
     ],
 
     # 7. Functions
-    # Standard C-style function definitions.
     'func_dec': [
-        Production('func_dec', ['func_def', 'func_dec_tail']),
+        Production('func_dec', ['func_def', 'func_dec']),
         Production('func_dec', []) 
-    ],
-    'func_dec_tail': [
-        Production('func_dec_tail', ['func_dec']),
-        Production('func_dec_tail', []) 
     ],
     'func_def': [
         Production('func_def', ['func_data_type', 'identifier', '(', 'func_params', ')', 'statements', 'mos'])
@@ -126,7 +116,7 @@ SOLUNA_GRAMMAR = {
         Production('param_tail', []) 
     ],
     'func_return': [
-        Production('func_return', ['zara', 'return_val', ';']) # zara is 'return'
+        Production('func_return', ['zara', 'return_val', ';'])
     ],
     'return_val': [
         Production('return_val', ['expression']),
@@ -134,28 +124,49 @@ SOLUNA_GRAMMAR = {
         Production('return_val', []) 
     ],
 
-    # 8. Statements
-    # The big list of everything allowed in a block.
+    # 8. Statements (NORMAL BLOCKS - NO BREAKS ALLOWED)
     'statements': [
-        Production('statements', ['dec_and_init', 'statement_tail']),
-        Production('statements', ['assignment_statement', 'statement_tail']),
-        Production('statements', ['local_dec', 'statement_tail']),
-        Production('statements', ['func_def', 'statement_tail']),
-        Production('statements', ['func_return', 'statement_tail']),
-        Production('statements', ['func_call', 'statement_tail']),
-        Production('statements', ['conditional_statement', 'statement_tail']),
-        Production('statements', ['loop_while_statement', 'statement_tail']),
-        Production('statements', ['loop_for_statement', 'statement_tail']),
-        Production('statements', ['loop_repeat_until_statement', 'statement_tail']),
-        Production('statements', ['output_statement', 'statement_tail']),
-        Production('statements', ['empty_statement', 'statement_tail']),
-        Production('statements', ['label_dec', 'statement_tail']),
-        Production('statements', ['label_goto', 'statement_tail']),
-        Production('statements', []) # End of block
+        Production('statements', ['statement', 'statements']),
+        Production('statements', [])
     ],
-    'statement_tail': [
-        Production('statement_tail', ['statements']),
-        Production('statement_tail', []) 
+    'statement': [
+        Production('statement', ['dec_and_init']),
+        Production('statement', ['assignment_statement']),
+        Production('statement', ['local_dec']),
+        Production('statement', ['func_def']),
+        Production('statement', ['func_return']),
+        Production('statement', ['func_call']),
+        Production('statement', ['conditional_statement']),
+        Production('statement', ['loop_while_statement']),
+        Production('statement', ['loop_for_statement']),
+        Production('statement', ['loop_repeat_until_statement']),
+        Production('statement', ['output_statement']),
+        Production('statement', ['empty_statement']),
+        Production('statement', ['label_dec']),
+        Production('statement', ['label_goto'])
+    ],
+
+    # NEW: Loop Statements (LOOP BLOCKS - BREAKS ALLOWED)
+    'loop_statements': [
+        Production('loop_statements', ['loop_statement', 'loop_statements']),
+        Production('loop_statements', [])
+    ],
+    'loop_statement': [
+        Production('loop_statement', ['dec_and_init']),
+        Production('loop_statement', ['assignment_statement']),
+        Production('loop_statement', ['local_dec']),
+        Production('loop_statement', ['func_def']),
+        Production('loop_statement', ['func_return']),
+        Production('loop_statement', ['func_call']),
+        Production('loop_statement', ['conditional_statement_in_loop']),
+        Production('loop_statement', ['loop_while_statement']),
+        Production('loop_statement', ['loop_for_statement']),
+        Production('loop_statement', ['loop_repeat_until_statement']),
+        Production('loop_statement', ['output_statement']),
+        Production('loop_statement', ['empty_statement']),
+        Production('loop_statement', ['label_dec']),
+        Production('loop_statement', ['label_goto']),
+        Production('loop_statement', ['break_statements'])
     ],
     'local_dec': [
         Production('local_dec', ['local', 'dec_and_init'])
@@ -296,8 +307,8 @@ SOLUNA_GRAMMAR = {
         Production('opt_unary_op', []) 
     ],
 
-    # 14. Control Flow (Sol/Soluna/Luna)
-    # This is if/else if/else logic.
+
+    # 14 Conditional Statements
     'conditional_statement': [
         Production('conditional_statement', ['sol', 'conditions', 'statements', 'mos', 'conditional_tail'])
     ],
@@ -318,44 +329,34 @@ SOLUNA_GRAMMAR = {
         Production('else', []) 
     ],
 
-    # 15. Loops
+    'conditional_statement_in_loop': [
+        Production('conditional_statement_in_loop', ['sol', 'conditions', 'loop_statements', 'mos', 'conditional_tail_in_loop'])
+    ],
+    'conditional_tail_in_loop': [
+        Production('conditional_tail_in_loop', ['ifelse_in_loop', 'conditional_tail_in_loop']), 
+        Production('conditional_tail_in_loop', ['else_in_loop']),
+        Production('conditional_tail_in_loop', []) 
+    ],
+    'ifelse_in_loop': [
+        Production('ifelse_in_loop', ['soluna', 'conditions', 'loop_statements', 'mos']),
+    ],
+    'else_in_loop': [
+        Production('else_in_loop', ['luna', 'loop_statements', 'mos']),
+        Production('else_in_loop', []) 
+    ],
+
+    # 15. Loops (Now using loop_statements)
     'loop_while_statement': [
-        Production('loop_while_statement', ['orbit', 'conditions', 'cos', 'statements_in_loops', 'mos'])
+        Production('loop_while_statement', ['orbit', 'conditions', 'cos', 'loop_statements', 'mos'])
     ],
     'loop_for_statement': [
-        Production('loop_for_statement', ['phase', 'for_loop_params', 'cos', 'statements_in_loops', 'mos'])
+        Production('loop_for_statement', ['phase', 'for_loop_params', 'cos', 'loop_statements', 'mos'])
     ],
     'loop_repeat_until_statement': [
-        Production('loop_repeat_until_statement', ['wax', 'statements_in_loops', 'wane', 'conditions'])
-    ],
-    'statements_in_loops': [
-        Production('statements_in_loops', ['statements', 'statements_in_loops_tail']),
-        Production('statements_in_loops', ['break_statements', 'statements_in_loops_tail']),
-        Production('statements_in_loops', []) 
-    ],
-    'statements_in_loops_tail': [
-        Production('statements_in_loops_tail', ['statements_in_loops']),
-        Production('statements_in_loops_tail', []) 
+        Production('loop_repeat_until_statement', ['wax', 'loop_statements', 'wane', 'conditions'])
     ],
     'break_statements': [
-        Production('break_statements', ['warp', ';']), # warp is 'break'
-        Production('break_statements', ['conditionals_with_break'])
-    ],
-    # Special rules to allow break (warp) inside conditionals ONLY if those conditionals are inside a loop.
-    'conditionals_with_break': [
-        Production('conditionals_with_break', ['sol', 'conditions', 'statements_in_loops', 'mos', 'conditionals_with_break_tail'])
-    ],
-    'conditionals_with_break_tail': [
-        Production('conditionals_with_break_tail', ['soluna_with_break', 'conditionals_with_break_tail']),
-        Production('conditionals_with_break_tail', ['luna_with_break']),
-        Production('conditionals_with_break_tail', [])
-    ],
-    'soluna_with_break': [
-        Production('soluna_with_break', ['soluna', 'conditions', 'statements_in_loops', 'mos'])
-    ],
-    'luna_with_break': [
-        Production('luna_with_break', ['luna', 'statements_in_loops', 'mos']),
-        Production('luna_with_break', [])
+        Production('break_statements', ['warp', ';'])
     ],
 
     # 16. For Loop Helpers
