@@ -228,16 +228,13 @@ SOLUNA_GRAMMAR = {
 
     # 11. Literals
     'literals': [
-        Production('literals', ['lani']),
+        Production('literals', ['iris']),
+        Production('literals', ['sage']),
         Production('literals', ['string_or_table_len']),
         Production('literals', ['integer']),
         Production('literals', ['float']),
         Production('literals', ['char']),
         Production('literals', ['string'])
-    ],
-    'lani': [
-        Production('lani', ['iris']), # True
-        Production('lani', ['sage'])  # False
     ],
     'string_or_table_len': [
         Production('string_or_table_len', ['#', 'identifier'])
