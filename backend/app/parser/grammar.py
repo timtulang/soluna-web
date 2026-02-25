@@ -306,16 +306,16 @@ SOLUNA_GRAMMAR = {
         Production('conditions', ['(', 'conditions', ')'])
     ],
     'conditional_tail': [
-        Production('conditional_tail', ['soluna', 'conditional_tail']), 
-        Production('conditional_tail', ['luna']),
+        Production('conditional_tail', ['ifelse', 'conditional_tail']), 
+        Production('conditional_tail', ['else']),
         Production('conditional_tail', []) 
     ],
-    'soluna': [
-        Production('soluna', ['soluna', 'conditions', 'statements', 'mos']),
+    'ifelse': [
+        Production('ifelse', ['soluna', 'conditions', 'statements', 'mos']),
     ],
-    'luna': [
-        Production('luna', ['luna', 'statements', 'mos']),
-        Production('luna', []) 
+    'else': [
+        Production('else', ['luna', 'statements', 'mos']),
+        Production('else', []) 
     ],
 
     # 15. Loops

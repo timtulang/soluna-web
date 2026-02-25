@@ -43,11 +43,9 @@ class SemanticAnalyzer:
         self.is_inside_local_decl = False
 
     def visit_var_dec(self, node):
-        # 1. Check Scope Context
-        # We use the flag set by visit_local_dec because the 'local' token is a parent, not a child.
         is_local = self.is_inside_local_decl
         
-        is_const = self._has_token(node, "zeta")
+        is_const = self._has_token_recursive(node, "zeta")
         
         type_node = self._find_child(node, "data_type")
         declared_type = self._extract_type_name(type_node)
@@ -83,10 +81,9 @@ class SemanticAnalyzer:
                     final_type = 'zeru'
             elif val_node:
                 expr_type = self._get_expression_type(val_node)
-                if not self._check_coercion(declared_type, expr_type):
+                if not self._check_coercion(declared_type, expr_type, val_node):
                      raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{declared_type}'.", line, col)
 
-            # Register with correct scope preference
             self.symbols.declare(var_name, {
                 "category": "variable",
                 "type": final_type,
@@ -97,10 +94,24 @@ class SemanticAnalyzer:
     # 2. TYPE COERCION
     # ==========================================
     
-    def _check_coercion(self, target, source):
+    def _check_coercion(self, target, source, expr_node=None):
         if target == 'let' or target == source or source == 'zeru': return True
-        if target == 'kai' and source in ['flux', 'lani', 'selene']: return True
-        if target == 'flux' and source in ['kai', 'lani', 'selene']: return True
+        
+        if target in ['kai', 'flux'] and source == 'selene':
+            if expr_node:
+                val_str = self._evaluate_static_string(expr_node)
+                if val_str is not None:
+                    try:
+                        if target == 'kai':
+                            int(val_str)
+                        elif target == 'flux':
+                            float(val_str)
+                    except ValueError:
+                        return False
+            return True
+
+        if target == 'kai' and source in ['flux', 'lani']: return True
+        if target == 'flux' and source in ['kai', 'lani']: return True
         if target == 'lani': return True 
         return False
 
@@ -109,13 +120,17 @@ class SemanticAnalyzer:
     # ==========================================
     
     def visit_assignment_statement(self, node):
-        # Case 1: Array/Table Assignment (a[1] = 5)
         table_nav = self._find_child(node, "table_nav")
         if table_nav:
             self.visit_table_nav(table_nav)
+            assign_val = self._find_child(node, "assignment_value")
+            if assign_val:
+                val_wrapper = self._find_child(assign_val, "value") 
+                val_node = self._find_child(val_wrapper, "expression")
+                if val_node:
+                    self._get_expression_type(val_node)
             return
 
-        # Case 2: Standard Assignment
         ident_token = self._find_token(node, "identifier")
         if ident_token:
             var_name = ident_token["value"]
@@ -133,9 +148,9 @@ class SemanticAnalyzer:
 
             if val_node:
                 expr_type = self._get_expression_type(val_node)
-                if not self._check_coercion(symbol["type"], expr_type):
+                if not self._check_coercion(symbol["type"], expr_type, val_node):
                     raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{symbol['type']}'.", line, col)
-
+                
     def visit_statements(self, node):
         self.generic_visit(node)
 
@@ -219,10 +234,11 @@ class SemanticAnalyzer:
              raise SemanticError(f"Function must return a value of type '{self.current_return_type}'.", 0, 0)
 
         if has_value:
-            val_type = self._get_expression_type(self._find_child(expr_node, "expression"))
-            if not self._check_coercion(self.current_return_type, val_type):
+            val_node = self._find_child(expr_node, "expression")
+            val_type = self._get_expression_type(val_node)
+            if not self._check_coercion(self.current_return_type, val_type, val_node):
                  raise SemanticError(f"Invalid return type. Expected '{self.current_return_type}', got '{val_type}'.", 0, 0)
-
+            
     # ==========================================
     # 5. EXPRESSIONS & TABLES
     # ==========================================
@@ -230,26 +246,23 @@ class SemanticAnalyzer:
     def _get_expression_type(self, node):
         if not node: return 'zeru'
 
-        token = self._find_token_in_tree(node)
-        if token:
-            t_type = token.get("token_type")
-            if t_type == 'integer': return 'kai'
-            if t_type == 'float': return 'flux'
-            if t_type == 'string': return 'selene'
-            if t_type == 'char': return 'blaze'
-            if t_type == 'identifier':
-                sym = self.symbols.lookup(token["value"])
-                if not sym: raise SemanticError(f"Undefined variable '{token['value']}'", token['line'], token['col'])
-                return sym["type"]
-            if t_type in ['iris', 'sage']: return 'lani'
+        self._check_division_by_zero(node)
+        
+        types_in_expr = self._collect_types_in_expr(node)
         
         if self._has_token_recursive(node, ".."): return 'selene'
         if self._has_any_token_recursive(node, ['==', '!=', '<', '>', '<=', '>=']): return 'lani'
         
-        types_in_expr = self._collect_types_in_expr(node)
         if 'flux' in types_in_expr: return 'flux'
         if 'kai' in types_in_expr: return 'kai'
+        if 'selene' in types_in_expr: return 'selene'
+        if 'lani' in types_in_expr: return 'lani'
+        
+        if len(types_in_expr) == 1:
+            return list(types_in_expr)[0]
+            
         return 'unknown'
+
 
     def visit_table_dec(self, node):
         type_node = self._find_child(node, "data_type")
@@ -273,7 +286,17 @@ class SemanticAnalyzer:
             sym = self.symbols.lookup(ident["value"])
             if not sym:
                 raise SemanticError(f"Variable '{ident['value']}' not declared.", ident["line"], ident["col"])
+            
+            if sym.get("category") != "table":
+                raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", ident["line"], ident["col"])
 
+    def _visit_table_navs_in_expr(self, node):
+        if not node: return
+        if node.get("type") == "table_nav":
+            self.visit_table_nav(node)
+        if "children" in node:
+            for child in node["children"]:
+                self._visit_table_navs_in_expr(child)
     # ==========================================
     # HELPER METHODS (Guarded)
     # ==========================================
@@ -327,17 +350,24 @@ class SemanticAnalyzer:
     def _collect_types_in_expr(self, node):
         types = set()
         if not node: return types
-        token = self._find_token_in_tree(node)
-        if token:
-            tt = token.get("token_type")
+        
+        if node.get("type") == "TOKEN":
+            tt = node.get("token_type")
             if tt == 'integer': types.add('kai')
             elif tt == 'float': types.add('flux')
+            elif tt == 'string': types.add('selene')
+            elif tt == 'char': types.add('blaze')
+            elif tt in ['iris', 'sage']: types.add('lani')
             elif tt == 'identifier':
-                sym = self.symbols.lookup(token.get("value"))
-                if sym: types.add(sym["type"])
+                sym = self.symbols.lookup(node.get("value"))
+                if not sym:
+                    raise SemanticError(f"Undefined variable '{node.get('value')}'", node.get('line'), node.get('col'))
+                types.add(sym["type"])
+        
         if "children" in node:
             for child in node["children"]:
-                if child: types.update(self._collect_types_in_expr(child))
+                if child:
+                    types.update(self._collect_types_in_expr(child))
         return types
     
     def _has_token_recursive(self, node, token_type):
@@ -355,3 +385,48 @@ class SemanticAnalyzer:
             for child in node["children"]:
                 if self._has_any_token_recursive(child, token_list): return True
         return False
+    
+    def _evaluate_static_string(self, node):
+        if not node: return ""
+        
+        if node.get("type") == "TOKEN":
+            tt = node.get("token_type")
+            if tt in ["string", "char"]:
+                return node.get("value", "").strip("\"'")
+            if tt in ["integer", "float"]:
+                return str(node.get("value"))
+            if tt == "identifier":
+                return None
+            return ""
+        
+        result = ""
+        if "children" in node:
+            for child in node["children"]:
+                val = self._evaluate_static_string(child)
+                if val is None:
+                    return None
+                result += val
+        return result
+    
+    def _check_division_by_zero(self, node):
+        tokens = self._get_all_tokens(node)
+        for i in range(len(tokens) - 1):
+            if tokens[i].get("value") == "/" and str(tokens[i+1].get("value")) == "0":
+                raise SemanticError("Division by zero detected.", tokens[i+1]["line"], tokens[i+1]["col"])
+            
+    def _get_all_tokens(self, node):
+        tokens = []
+        if not node: return tokens
+        if node.get("type") == "TOKEN":
+            tokens.append(node)
+        if "children" in node:
+            for child in node["children"]:
+                tokens.extend(self._get_all_tokens(child))
+        return tokens
+    
+    def visit_output_statement(self, node):
+        arg_node = self._find_child(node, "output_arg")
+        if arg_node:
+            expr_node = self._find_child(arg_node, "expression")
+            if expr_node:
+                self._get_expression_type(expr_node)
