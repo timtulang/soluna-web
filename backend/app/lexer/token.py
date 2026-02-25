@@ -9,15 +9,13 @@
 #
 
 # --- Reserved Words and Symbols ---
-# I define these as sets for fast O(1) lookups.
-# This is much faster than checking against a list.
-
 RESERVED_WORDS = {
     'and', 'blaze', 'cos', 'flux', 'hubble', 'iris', 
     'kai', 'lani', 'leo', 'let', 'local', 'lumen', 'lumina', 'luna', 'mos', 'not', 
     'nova', 'or', 'orbit', 'phase', 'sage', 'selene', 'sol', 'soluna', 
     'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'
 }
+
 RESERVED_SYMBOLS = {
     '+', '++', '+=', '-', '--', '-=', '*', '*=', '/', '/=', '//', '^', 
     '%', '%=', '=', '==', '!', '!=', '<', '<=', '>', '>=', '&&', '||', 
@@ -40,111 +38,125 @@ def is_leo_label(lexeme):
     return True
 
 def tokenize(lexemes: list[str], metadata: list):
-    """
-    This is the main function of this module. It takes the list of
-    raw lexemes from the lexer and classifies them.
-    
-    Args:
-        lexemes (list[str]): The list of raw lexeme strings.
-        metadata (list[dict]): The list of metadata dicts (line, col, etc.)
-                               corresponding to each lexeme.
-                               
-    Returns:
-        A list of classified tokens, zipped with their metadata.
-        Format: [ ( (value, type), metadata ), ... ]
-    """
     token_stream = []
+    new_metadata = []
     
-    for i, lexeme in enumerate(lexemes):
-        # Safe access to metadata
+    # Types of tokens that indicate the following '-' MUST be a SUBTRACTION operator,
+    # not the start of a negative number.
+    SUBTRACTION_PREDECESSORS = {
+        'identifier', 'kai_lit', 'flux_lit', 'blaze_lit', 'selene_lit',
+        ')', ']', '++', '--', 'iris', 'sage'
+    }
+    
+    i = 0
+    while i < len(lexemes):
+        lexeme = lexemes[i]
         meta = metadata[i] if i < len(metadata) else {}
 
-        # This is a safe-guard, though my current lexer.py doesn't
-        # pass tuples.
+        # --- 1. Split Eagerly Grouped Negative Numbers (e.g., "a -5") ---
+        # If the FA grouped "-5", but the previous token implies subtraction, SPLIT IT.
+        if isinstance(lexeme, str) and lexeme.startswith('-') and len(lexeme) > 1:
+            clean_test = lexeme[1:].replace('.', '', 1)
+            if clean_test.isdigit():
+                prev_type = token_stream[-1][1] if token_stream else None
+                if prev_type in SUBTRACTION_PREDECESSORS:
+                    # SPLIT: Yield '-' then process the rest as a positive number
+                    token_stream.append(('-', '-'))
+                    
+                    meta_minus = dict(meta)
+                    meta_minus['end'] = meta['start'] + 1
+                    new_metadata.append(meta_minus)
+                    
+                    # Modify the current lexeme to be just the positive number part
+                    lexeme = lexeme[1:]
+                    meta = dict(meta)
+                    meta['col'] += 1
+                    meta['start'] += 1
+        
+        # --- 2. Merge Isolated Unary Minus (e.g., "a = - 5") ---
+        # If the FA separated "-" and "5", but it should be a negative number, MERGE IT.
+        if isinstance(lexeme, str) and lexeme == '-':
+            prev_type = token_stream[-1][1] if token_stream else None
+            if prev_type not in SUBTRACTION_PREDECESSORS:
+                # It's unary! Check if the next lexeme is a number.
+                if i + 1 < len(lexemes):
+                    next_lexeme = lexemes[i+1]
+                    if isinstance(next_lexeme, str):
+                        next_clean = next_lexeme.replace('.', '', 1)
+                        if next_clean.isdigit():
+                            # MERGE: Glue them together
+                            lexeme = "-" + next_lexeme
+                            next_meta = metadata[i+1] if i+1 < len(metadata) else {}
+                            meta = dict(meta)
+                            meta['end'] = next_meta.get('end', meta['end']) # Span across
+                            i += 1 # Skip the next token since we merged it
+
+        # --- Classification Cascade ---
         if isinstance(lexeme, tuple):
             token_stream.append(lexeme)
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # --- Classification Cascade ---
-        # I use a simple, fast cascade of checks, starting
-        # with the most common and cheapest checks.
-        
-        # 1. Is it a reserved word?
-        # Modified logic: Check if we are forced to treat it as an ID
-        # (e.g. "kai*" where "kai" is accepted by ID state but rejected by Keyword state)
         if lexeme in RESERVED_WORDS and not meta.get('force_id'):
             token_stream.append((lexeme, lexeme))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 2. Is it a reserved symbol?
         if lexeme in RESERVED_SYMBOLS:
             token_stream.append((lexeme, lexeme))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 3. Is it a comment?
-        if lexeme.startswith('\\\\'):
+        if lexeme.startswith('\\\\') or lexeme.startswith('\\*'):
             token_stream.append((lexeme, 'comment'))
-            continue
-        if lexeme.startswith('\\*'):
-            token_stream.append((lexeme, 'comment'))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 4. Is it my custom 'leo_label'?
         if is_leo_label(lexeme):
             token_stream.append((lexeme, 'label'))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 5. Is it a string literal?
         if lexeme.startswith('"') and lexeme.endswith('"'):
             token_stream.append((lexeme, 'selene_lit'))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 6. Is it a char literal?
         if lexeme.startswith("'") and lexeme.endswith("'"):
             token_stream.append((lexeme, 'blaze_lit'))
+            new_metadata.append(meta)
+            i += 1
             continue
             
-        # 7. Is it a number?
-        # I use replace() to check for at most one decimal point (ignoring optional leading minus).
         clean_lexeme = lexeme.lstrip('-')
         if clean_lexeme.replace('.', '', 1).isdigit():
             if '.' in clean_lexeme:
-                # It's a float type (either FLUX or ASTER)
-                # We split by '.' to check fractional precision
                 parts = clean_lexeme.split('.')
                 fractional_part = parts[1] if len(parts) > 1 else ""
-                
-                # Normalize: Remove leading zeros from int part, trailing from frac part
-                # For negative numbers, preserve the sign manually
                 sign = "-" if lexeme.startswith("-") else ""
                 integer_part = parts[0].lstrip('0') or '0'
-                # Note: We keep trailing zeros for precision check? 
-                # Usually precision implies significant digits. 
-                # But the user requirement implies raw length check "up to 4 digits".
-                # We will normalize the value string, but check type based on input length?
-                # Let's normalize first.
                 fractional_part_norm = fractional_part.rstrip('0') or '0'
                 normalized = f"{sign}{integer_part}.{fractional_part_norm}"
-                
-                # Check ORIGINAL fractional length for classification (standard behavior)
-                # or normalized? "up to 4 digits" usually means capacity.
-                # If input is 1.12345, it fits in ASTER, not FLUX.
-                if len(fractional_part) or true:
-                    token_stream.append((normalized, 'flux_lit'))
+                token_stream.append((normalized, 'flux_lit'))
             else:
-                # It's an integer ('kai_lit')
                 sign = "-" if lexeme.startswith("-") else ""
                 normalized = sign + (clean_lexeme.lstrip('0') or '0')
-                token_stream.append((normalized, 'kai_lit')) 
+                token_stream.append((normalized, 'kai_lit'))
+            new_metadata.append(meta)
+            i += 1
             continue
         
-        # 8. If it's none of the above, it must be an identifier.
         token_stream.append((lexeme, 'identifier'))
+        new_metadata.append(meta)
+        i += 1
 
-    # Finally, I re-combine the newly classified tokens
-    # with their original metadata (line, col, index).
-    if metadata and len(metadata) == len(token_stream):
-        return [(tok, meta) for tok, meta in zip(token_stream, metadata)]
+    if metadata and len(new_metadata) == len(token_stream):
+        return [(tok, m) for tok, m in zip(token_stream, new_metadata)]
         
-    # Fallback if metadata wasn't provided for some reason
     return token_stream

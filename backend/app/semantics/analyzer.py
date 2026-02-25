@@ -72,14 +72,23 @@ class SemanticAnalyzer:
 
             val_node = values[i] if i < len(values) else None
             final_type = declared_type
+            
+            # Check if the assigned value is a lumina() input
+            is_lumina = val_node and val_node.get("type") == "value" and self._has_token(val_node, "lumina")
+
+            if is_const and is_lumina:
+                raise SemanticError(f"Constant variable '{var_name}' cannot be initialized with runtime input 'lumina()'.", line, col)
 
             if declared_type == 'let':
                 if val_node:
-                    final_type = self._get_expression_type(val_node)
-                    if final_type == 'unknown': final_type = 'zeru' 
+                    if is_lumina:
+                        final_type = 'let'
+                    else:
+                        final_type = self._get_expression_type(val_node)
+                        if final_type == 'unknown': final_type = 'zeru' 
                 else:
                     final_type = 'zeru'
-            elif val_node:
+            elif val_node and not is_lumina:
                 expr_type = self._get_expression_type(val_node)
                 if not self._check_coercion(declared_type, expr_type, val_node):
                      raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{declared_type}'.", line, col)
@@ -96,7 +105,7 @@ class SemanticAnalyzer:
     
     def _check_coercion(self, target, source, expr_node=None):
         if target == 'let' or target == source or source == 'zeru': return True
-        
+
         if target in ['kai', 'flux'] and source == 'selene':
             if expr_node:
                 val_str = self._evaluate_static_string(expr_node)
@@ -106,9 +115,10 @@ class SemanticAnalyzer:
                             int(val_str)
                         elif target == 'flux':
                             float(val_str)
+                        return True
                     except ValueError:
                         return False
-            return True
+            return False
 
         if target == 'kai' and source in ['flux', 'lani']: return True
         if target == 'flux' and source in ['kai', 'lani']: return True
@@ -126,9 +136,10 @@ class SemanticAnalyzer:
             assign_val = self._find_child(node, "assignment_value")
             if assign_val:
                 val_wrapper = self._find_child(assign_val, "value") 
-                val_node = self._find_child(val_wrapper, "expression")
-                if val_node:
-                    self._get_expression_type(val_node)
+                if val_wrapper and not self._has_token(val_wrapper, "lumina"):
+                    val_node = self._find_child(val_wrapper, "expression")
+                    if val_node:
+                        self._get_expression_type(val_node)
             return
 
         ident_token = self._find_token(node, "identifier")
@@ -144,12 +155,13 @@ class SemanticAnalyzer:
 
             assign_val = self._find_child(node, "assignment_value")
             val_wrapper = self._find_child(assign_val, "value") 
-            val_node = self._find_child(val_wrapper, "expression")
-
-            if val_node:
-                expr_type = self._get_expression_type(val_node)
-                if not self._check_coercion(symbol["type"], expr_type, val_node):
-                    raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{symbol['type']}'.", line, col)
+            
+            if val_wrapper and not self._has_token(val_wrapper, "lumina"):
+                val_node = self._find_child(val_wrapper, "expression")
+                if val_node:
+                    expr_type = self._get_expression_type(val_node)
+                    if not self._check_coercion(symbol["type"], expr_type, val_node):
+                        raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to '{symbol['type']}'.", line, col)
                 
     def visit_statements(self, node):
         self.generic_visit(node)
@@ -351,8 +363,15 @@ class SemanticAnalyzer:
         ident = self._find_token(node, "identifier")
         if ident:
             func_name = ident["value"]
+            
+            # Built-in check
             if func_name in ["nova", "lumen"]:
-                self._collect_types_in_expr(node)
+                args_node = self._find_child(node, "func_call_args")
+                args = []
+                if args_node:
+                    self._collect_args(args_node, args)
+                for arg_expr in args:
+                    self._get_expression_type(arg_expr)
                 return
             
             sym = self.symbols.lookup(func_name)
@@ -377,8 +396,6 @@ class SemanticAnalyzer:
                 expected_type = expected_params[i]
                 if not self._check_coercion(expected_type, arg_type, arg_expr):
                     raise SemanticError(f"Argument {i+1} of '{func_name}' expects '{expected_type}', got '{arg_type}'.", ident["line"], ident["col"])
-        
-        self._collect_types_in_expr(node)
 
     def visit_func_call_in_expr(self, node):
         self.visit_func_call(node)
@@ -394,30 +411,33 @@ class SemanticAnalyzer:
     # ==========================================
     # 5. EXPRESSIONS & TABLES
     # ==========================================
+
+    def _validate_expr_components(self, node):
+        """Single pass to trigger specific checks safely within an expression"""
+        if not node: return
+        
+        node_type = node.get("type")
+        if node_type == "table_nav":
+            self.visit_table_nav(node)
+            
+        if node_type in ["func_call", "func_call_in_expr"]:
+            self.visit_func_call(node)
+            
+        if "children" in node:
+            for child in node["children"]:
+                self._validate_expr_components(child)
     
     def _get_expression_type(self, node):
         if not node: return 'zeru'
 
         self._check_division_by_zero(node)
-        self._visit_table_navs_in_expr(node)
+        self._validate_expr_components(node) # Replaces _visit_table_navs_in_expr
 
-        token = self._find_token_in_tree(node)
-        if token:
-            t_type = token.get("token_type")
-            if t_type == 'integer': return 'kai'
-            if t_type == 'float': return 'flux'
-            if t_type == 'string': return 'selene'
-            if t_type == 'char': return 'blaze'
-            if t_type == 'identifier':
-                sym = self.symbols.lookup(token["value"])
-                if not sym: raise SemanticError(f"Undefined variable '{token['value']}'", token['line'], token['col'])
-                return sym.get("type", sym.get("return_type", "unknown"))
-            if t_type in ['iris', 'sage']: return 'lani'
-        
+        types_in_expr = self._collect_types_in_expr(node)
+
         if self._has_token_recursive(node, ".."): return 'selene'
         if self._has_any_token_recursive(node, ['==', '!=', '<', '>', '<=', '>=']): return 'lani'
         
-        types_in_expr = self._collect_types_in_expr(node)
         if 'flux' in types_in_expr: return 'flux'
         if 'kai' in types_in_expr: return 'kai'
         if 'selene' in types_in_expr: return 'selene'
@@ -434,27 +454,65 @@ class SemanticAnalyzer:
         elem_type = self._extract_type_name(type_node)
         
         ident = self._find_token(node, "identifier")
-        
-        # Use the flag from visit_local_dec
         is_local = self.is_inside_local_decl
         
         if ident:
+            line, col = ident["line"], ident["col"]
             self.symbols.declare(ident["value"], {
                 "category": "table",
                 "type": "hubble",
                 "element_type": elem_type
-            }, ident["line"], ident["col"], is_local=is_local)
+            }, line, col, is_local=is_local)
 
+            elems_node = self._find_child(node, "hubble_elements")
+            if elems_node:
+                self._validate_hubble_elements(elems_node, elem_type, line, col)
+
+    def _validate_hubble_elements(self, node, elem_type, line, col):
+        if not node: return
+
+        if node.get("type") == "hubble_elements":
+            expr_node = self._find_child(node, "expression")
+            func_def_node = self._find_child(node, "func_def")
+            table_var_dec_node = self._find_child(node, "table_var_dec")
+
+            if expr_node:
+                expr_type = self._get_expression_type(expr_node)
+                if not self._check_coercion(elem_type, expr_type, expr_node):
+                    raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
+
+            if func_def_node and elem_type != 'let':
+                raise SemanticError(f"Cannot declare functions inside a strictly typed '{elem_type}' table.", line, col)
+
+            if table_var_dec_node and elem_type != 'let':
+                raise SemanticError(f"Cannot declare variables inside a strictly typed '{elem_type}' table.", line, col)
+
+        if "children" in node:
+            for child in node["children"]:
+                if child and child.get("type") in ["hubble_elements", "hubble_element_tail"]:
+                    self._validate_hubble_elements(child, elem_type, line, col)
+                    
     def visit_table_nav(self, node):
         ident = self._find_token(node, "identifier")
         if ident:
             sym = self.symbols.lookup(ident["value"])
+            line, col = ident["line"], ident["col"]
+            
             if not sym:
-                raise SemanticError(f"Variable '{ident['value']}' not declared.", ident["line"], ident["col"])
+                raise SemanticError(f"Variable '{ident['value']}' not declared.", line, col)
             
             if sym.get("category") != "table":
-                raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", ident["line"], ident["col"])
-
+                raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", line, col)
+            
+            # If this is an assignment operation (table_nav node contains '=' and 'expression')
+            if self._has_token(node, "="):
+                expr_node = self._find_child(node, "expression")
+                if expr_node:
+                    expr_type = self._get_expression_type(expr_node)
+                    elem_type = sym.get("element_type", "unknown")
+                    if not self._check_coercion(elem_type, expr_type, expr_node):
+                        raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
+                    
     def _visit_table_navs_in_expr(self, node):
         if not node: return
         if node.get("type") == "table_nav":
@@ -508,7 +566,10 @@ class SemanticAnalyzer:
         val = self._find_child(node, "value")
         if val: 
             expr = self._find_child(val, "expression")
-            if expr: list_ref.append(expr)
+            if expr: 
+                list_ref.append(expr)
+            elif self._has_token(val, "lumina"):
+                list_ref.append(val) # Captures the lumina() call
         next_tail = self._find_child(node, "value_init_tail")
         if next_tail: self._collect_values(next_tail, list_ref)
 
@@ -516,18 +577,36 @@ class SemanticAnalyzer:
         types = set()
         if not node: return types
         
-        if node.get("type") in ["func_call", "func_call_in_expr"]:
-            self.visit_func_call(node)
-
-        token = self._find_token_in_tree(node)
-        if token:
-            tt = token.get("token_type")
+        node_type = node.get("type")
+        
+        if node_type in ["func_call", "func_call_in_expr"]:
+            ident = self._find_token(node, "identifier")
+            if ident:
+                sym = self.symbols.lookup(ident["value"])
+                if sym: types.add(sym.get("type", sym.get("return_type", "unknown")))
+            return types 
+            
+        # Stop traversing down into brackets if we hit a table index!
+        if node_type == "identifier_tail":
+            return types 
+        
+        if node_type == "TOKEN":
+            tt = node.get("token_type")
             if tt == 'integer': types.add('kai')
             elif tt == 'float': types.add('flux')
+            elif tt == 'string': types.add('selene')
+            elif tt == 'char': types.add('blaze')
+            elif tt in ['iris', 'sage']: types.add('lani')
             elif tt == 'identifier':
-                sym = self.symbols.lookup(token.get("value"))
-                if sym: types.add(sym.get("type", sym.get("return_type", "unknown")))
-        
+                sym = self.symbols.lookup(node.get("value"))
+                if not sym: 
+                    raise SemanticError(f"Undefined variable '{node.get('value')}'", node.get('line'), node.get('col'))
+                
+                if sym.get("category") == "table":
+                    types.add(sym.get("element_type", "unknown"))
+                else:
+                    types.add(sym.get("type", sym.get("return_type", "unknown")))
+                    
         if "children" in node:
             for child in node["children"]:
                 if child: types.update(self._collect_types_in_expr(child))
