@@ -553,7 +553,7 @@ const App: React.FC = () => {
                   <div className="bg-red-900/20 border-b border-red-900/50 p-3">
                      <div className="flex items-center gap-2 text-red-500 font-bold text-xs mb-2">
                         <IconError />
-                        {sidebarErrors.length} SYNTAX ERROR(S)
+                        {sidebarErrors.length} {activeRightTab === 'lexer' ? 'LEXER' : 'SYNTAX'} ERROR(S)
                      </div>
                      {sidebarErrors.map((err, i) => (
                         <div key={i} className="text-[11px] text-red-400 font-mono mb-1 pl-5 border-l-2 border-red-900/50">
