@@ -7,7 +7,7 @@ DELIMS = {
     'separator_delim': {*REGDEF['free_delim'], '(' },
     'and_or_delim': {'(', '!', '"', '-', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'arithmetic_delim': {'(', '!', '"', '-', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
-    'comma_equal_delim': {'"', '+', '-', '!', '(', '{', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
+    'comma_equal_delim': {'"', '+', '-', '!', '(', '{', '\'', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'iris_sage_delim': {*REGDEF['free_delim'], *REGDEF['arithmetic_operators'], *REGDEF['relational_operators'], ')', ';', ',', '&', '|', '('},
     'label_delim': {*REGDEF['free_delim'], ';'},
     'most_symbol_delim': {'(', '!', '"', '-', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
