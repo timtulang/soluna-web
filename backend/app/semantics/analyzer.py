@@ -13,6 +13,9 @@ class SemanticAnalyzer:
         self.symbols = SymbolTable()
         self.current_return_type = None
         self.is_inside_local_decl = False
+        
+        self._declare_all_functions(tree)
+        
         if tree:
             self.visit(tree)
 
@@ -28,6 +31,37 @@ class SemanticAnalyzer:
         if "children" in node:
             for child in node["children"]:
                 if child: self.visit(child)
+
+    def _declare_all_functions(self, node):
+        if not node: return
+        
+        if node.get("type") == "func_dec":
+            func_def = self._find_child(node, "func_def")
+            if func_def:
+                func_type_node = self._find_child(func_def, "func_data_type")
+                return_type = self._extract_type_name(func_type_node)
+                
+                func_name_token = self._find_token(func_def, "identifier")
+                
+                params = []
+                func_params_node = self._find_child(func_def, "func_params")
+                if func_params_node:
+                    self._collect_params(func_params_node, params)
+                
+                if func_name_token:
+                    func_name = func_name_token["value"]
+                    param_types = [p["type"] for p in params]
+                    
+                    if not self.symbols.lookup(func_name):
+                        self.symbols.declare(func_name, {
+                            "category": "function",
+                            "return_type": return_type,
+                            "params": param_types
+                        }, func_name_token["line"], func_name_token["col"], is_local=False)
+
+        if "children" in node:
+            for child in node["children"]:
+                self._declare_all_functions(child)
 
     # ==========================================
     # 1. IDENTIFIERS & VARIABLES
@@ -310,11 +344,13 @@ class SemanticAnalyzer:
         if func_name_token:
             func_name = func_name_token["value"]
             param_types = [p["type"] for p in params]
-            self.symbols.declare(func_name, {
-                "category": "function",
-                "return_type": return_type,
-                "params": param_types
-            }, func_name_token["line"], func_name_token["col"], is_local=False)
+            
+            if not self.symbols.lookup(func_name):
+                self.symbols.declare(func_name, {
+                    "category": "function",
+                    "return_type": return_type,
+                    "params": param_types
+                }, func_name_token["line"], func_name_token["col"], is_local=False)
 
         self.current_return_type = return_type
         self.symbols.enter_scope()
@@ -333,10 +369,10 @@ class SemanticAnalyzer:
         self.symbols.exit_scope()
         self.current_return_type = None
 
-        func_dec_tail = self._find_child(node, "func_dec_tail")
-        if func_dec_tail:
-            self.visit(func_dec_tail)
-
+        for child in node.get("children", []):
+            if child and child.get("type") != "func_def":
+                self.visit(child)
+                
     def visit_func_return(self, node):
         if self.current_return_type is None:
             raise SemanticError("'zara' used outside of function.", 0, 0)
@@ -428,7 +464,6 @@ class SemanticAnalyzer:
     # ==========================================
 
     def _validate_expr_components(self, node):
-        """Single pass to trigger specific checks safely within an expression"""
         if not node: return
         
         node_type = node.get("type")
@@ -437,6 +472,7 @@ class SemanticAnalyzer:
             
         if node_type in ["func_call", "func_call_in_expr"]:
             self.visit_func_call(node)
+            return
             
         if "children" in node:
             for child in node["children"]:
