@@ -196,29 +196,50 @@ class SemanticAnalyzer:
     # ==========================================
     
     def visit_func_dec(self, node):
-        func_type_node = self._find_child(node, "func_data_type")
+        func_def = self._find_child(node, "func_def")
+        if not func_def:
+            self.generic_visit(node)
+            return
+
+        func_type_node = self._find_child(func_def, "func_data_type")
         return_type = self._extract_type_name(func_type_node)
         
-        func_def = self._find_child(node, "func_def")
         func_name_token = self._find_token(func_def, "identifier")
+        
+        params = []
+        func_params_node = self._find_child(func_def, "func_params")
+        if func_params_node:
+            self._collect_params(func_params_node, params)
         
         if func_name_token:
             func_name = func_name_token["value"]
+            param_types = [p["type"] for p in params]
             self.symbols.declare(func_name, {
                 "category": "function",
                 "return_type": return_type,
-                "params": [] 
+                "params": param_types
             }, func_name_token["line"], func_name_token["col"], is_local=False)
 
         self.current_return_type = return_type
         self.symbols.enter_scope()
         
-        if func_def:
-            statements = self._find_child(func_def, "statements")
+        for p in params:
+            self.symbols.declare(p["name"], {
+                "category": "variable",
+                "type": p["type"],
+                "is_const": False
+            }, p["line"], p["col"], is_local=True)
+        
+        statements = self._find_child(func_def, "statements")
+        if statements:
             self.visit(statements)
         
         self.symbols.exit_scope()
         self.current_return_type = None
+
+        func_dec_tail = self._find_child(node, "func_dec_tail")
+        if func_dec_tail:
+            self.visit(func_dec_tail)
 
     def visit_func_return(self, node):
         if self.current_return_type is None:
@@ -238,7 +259,69 @@ class SemanticAnalyzer:
             val_type = self._get_expression_type(val_node)
             if not self._check_coercion(self.current_return_type, val_type, val_node):
                  raise SemanticError(f"Invalid return type. Expected '{self.current_return_type}', got '{val_type}'.", 0, 0)
+    
+    def _collect_params(self, node, param_list):
+        if not node: return
+        param_node = self._find_child(node, "param")
+        if param_node:
+            type_node = self._find_child(param_node, "data_type")
+            p_type = self._extract_type_name(type_node)
+            ident = self._find_token(param_node, "identifier")
+            if ident:
+                param_list.append({
+                    "name": ident["value"],
+                    "type": p_type,
+                    "line": ident["line"],
+                    "col": ident["col"]
+                })
+        tail = self._find_child(node, "param_tail")
+        if tail:
+            self._collect_params(tail, param_list)
+
+    def visit_func_call(self, node):
+        ident = self._find_token(node, "identifier")
+        if ident:
+            func_name = ident["value"]
+            if func_name in ["nova", "lumen"]:
+                self._collect_types_in_expr(node)
+                return
             
+            sym = self.symbols.lookup(func_name)
+            if not sym:
+                raise SemanticError(f"Function '{func_name}' not declared.", ident["line"], ident["col"])
+            
+            if sym.get("category") != "function":
+                raise SemanticError(f"'{func_name}' is not callable.", ident["line"], ident["col"])
+            
+            args_node = self._find_child(node, "func_call_args")
+            args = []
+            if args_node:
+                self._collect_args(args_node, args)
+            
+            expected_params = sym.get("params", [])
+            
+            if len(args) != len(expected_params):
+                raise SemanticError(f"Function '{func_name}' expects {len(expected_params)} arguments, got {len(args)}.", ident["line"], ident["col"])
+            
+            for i, arg_expr in enumerate(args):
+                arg_type = self._get_expression_type(arg_expr)
+                expected_type = expected_params[i]
+                if not self._check_coercion(expected_type, arg_type, arg_expr):
+                    raise SemanticError(f"Argument {i+1} of '{func_name}' expects '{expected_type}', got '{arg_type}'.", ident["line"], ident["col"])
+        
+        self._collect_types_in_expr(node)
+
+    def visit_func_call_in_expr(self, node):
+        self.visit_func_call(node)
+
+    def _collect_args(self, node, arg_list):
+        if not node: return
+        expr_node = self._find_child(node, "expression")
+        if expr_node:
+            arg_list.append(expr_node)
+        tail = self._find_child(node, "func_call_args_tail")
+        if tail:
+            self._collect_args(tail, arg_list)
     # ==========================================
     # 5. EXPRESSIONS & TABLES
     # ==========================================
@@ -247,12 +330,25 @@ class SemanticAnalyzer:
         if not node: return 'zeru'
 
         self._check_division_by_zero(node)
-        
-        types_in_expr = self._collect_types_in_expr(node)
+        self._visit_table_navs_in_expr(node)
+
+        token = self._find_token_in_tree(node)
+        if token:
+            t_type = token.get("token_type")
+            if t_type == 'integer': return 'kai'
+            if t_type == 'float': return 'flux'
+            if t_type == 'string': return 'selene'
+            if t_type == 'char': return 'blaze'
+            if t_type == 'identifier':
+                sym = self.symbols.lookup(token["value"])
+                if not sym: raise SemanticError(f"Undefined variable '{token['value']}'", token['line'], token['col'])
+                return sym.get("type", sym.get("return_type", "unknown"))
+            if t_type in ['iris', 'sage']: return 'lani'
         
         if self._has_token_recursive(node, ".."): return 'selene'
         if self._has_any_token_recursive(node, ['==', '!=', '<', '>', '<=', '>=']): return 'lani'
         
+        types_in_expr = self._collect_types_in_expr(node)
         if 'flux' in types_in_expr: return 'flux'
         if 'kai' in types_in_expr: return 'kai'
         if 'selene' in types_in_expr: return 'selene'
@@ -351,23 +447,21 @@ class SemanticAnalyzer:
         types = set()
         if not node: return types
         
-        if node.get("type") == "TOKEN":
-            tt = node.get("token_type")
+        if node.get("type") in ["func_call", "func_call_in_expr"]:
+            self.visit_func_call(node)
+
+        token = self._find_token_in_tree(node)
+        if token:
+            tt = token.get("token_type")
             if tt == 'integer': types.add('kai')
             elif tt == 'float': types.add('flux')
-            elif tt == 'string': types.add('selene')
-            elif tt == 'char': types.add('blaze')
-            elif tt in ['iris', 'sage']: types.add('lani')
             elif tt == 'identifier':
-                sym = self.symbols.lookup(node.get("value"))
-                if not sym:
-                    raise SemanticError(f"Undefined variable '{node.get('value')}'", node.get('line'), node.get('col'))
-                types.add(sym["type"])
+                sym = self.symbols.lookup(token.get("value"))
+                if sym: types.add(sym.get("type", sym.get("return_type", "unknown")))
         
         if "children" in node:
             for child in node["children"]:
-                if child:
-                    types.update(self._collect_types_in_expr(child))
+                if child: types.update(self._collect_types_in_expr(child))
         return types
     
     def _has_token_recursive(self, node, token_type):
