@@ -183,9 +183,78 @@ class SemanticAnalyzer:
     def visit_loop_for_statement(self, node):
         self.symbols.enter_loop()
         self.symbols.enter_scope()
-        self.generic_visit(node)
+
+        params_node = self._find_child(node, "for_loop_params")
+        if params_node:
+            for_start = self._find_child(params_node, "for_start")
+            if for_start:
+                self._validate_for_start(for_start)
+            
+            # Validate Limit Expression
+            for_limit = self._find_child(params_node, "for_limit")
+            if for_limit:
+                limit_expr = self._find_child(for_limit, "expr_factor")
+                if limit_expr:
+                    limit_type = self._get_expression_type(limit_expr)
+                    if limit_type not in ['kai', 'unknown']:
+                        raise SemanticError(f"For loop limit must evaluate to 'kai', got '{limit_type}'.", 0, 0)
+            
+            # Validate Step Expression
+            for_step = self._find_child(params_node, "for_step")
+            if for_step:
+                step_expr = self._find_child(for_step, "expr_factor")
+                if step_expr:
+                    step_type = self._get_expression_type(step_expr)
+                    if step_type not in ['kai', 'unknown']:
+                        raise SemanticError(f"For loop step must evaluate to 'kai', got '{step_type}'.", 0, 0)
+
+        # Process Inner Loop Block
+        loop_statements = self._find_child(node, "loop_statements")
+        if loop_statements:
+            self.visit(loop_statements)
+        
         self.symbols.exit_scope()
         self.symbols.exit_loop()
+
+    def _validate_for_start(self, for_start_node):
+        ident_token = self._find_token(for_start_node, "identifier")
+        if not ident_token: return
+        
+        var_name = ident_token["value"]
+        line, col = ident_token["line"], ident_token["col"]
+
+        is_declaration = self._has_token(for_start_node, "kai")
+        has_assignment = self._has_token(for_start_node, "=")
+
+        if is_declaration:
+            # Case 1: kai i = 1
+            expr_node = self._find_child(for_start_node, "expr_factor")
+            if expr_node:
+                expr_type = self._get_expression_type(expr_node)
+                if expr_type not in ['kai', 'unknown']:
+                    raise SemanticError(f"Type Mismatch in loop init: Cannot assign '{expr_type}' to 'kai'.", line, col)
+            
+            self.symbols.declare(var_name, {
+                "category": "variable",
+                "type": "kai",
+                "is_const": False
+            }, line, col, is_local=True)
+            
+        else:
+            # Case 2 & 3: i = 1 OR i
+            sym = self.symbols.lookup(var_name)
+            if not sym:
+                raise SemanticError(f"Variable '{var_name}' not declared in for loop initialization.", line, col)
+            
+            if sym.get("type") != "kai":
+                raise SemanticError(f"For loop variable '{var_name}' must be of type 'kai', but is '{sym.get('type')}'.", line, col)
+
+            if has_assignment:
+                expr_node = self._find_child(for_start_node, "expr_factor")
+                if expr_node:
+                    expr_type = self._get_expression_type(expr_node)
+                    if expr_type not in ['kai', 'unknown']:
+                        raise SemanticError(f"Type Mismatch in loop init: Cannot assign '{expr_type}' to 'kai'.", line, col)
 
     def visit_break_statements(self, node):
         if not self.symbols.is_inside_loop():

@@ -365,7 +365,9 @@ SOLUNA_GRAMMAR = {
         Production('for_loop_params', ['(', 'for_loop_params', ')'])
     ],
     'for_start': [
-        Production('for_start', ['kai', 'identifier', '=', 'expr_factor'])
+        Production('for_start', ['kai', 'identifier', '=', 'expr_factor']),
+        Production('for_start', ['identifier', '=', 'expr_factor']),
+        Production('for_start', ['identifier'])
     ],
     'for_limit': [
         Production('for_limit', [',', 'expr_factor'])
