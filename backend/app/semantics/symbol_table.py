@@ -17,9 +17,11 @@ class SymbolTable:
 
     def exit_scope(self):
         if self.current_scope_level > 0:
-            self.scopes.pop()
+            popped_scope = self.scopes.pop() 
             self.current_scope_level -= 1
-
+            return popped_scope 
+        return {}
+    
     def is_global(self):
         return self.current_scope_level == 0
 
@@ -46,17 +48,20 @@ class SymbolTable:
         
         target_scope = self.scopes[-1] if is_local else self.scopes[0]
 
-        if name in self.scopes[-1]:
-            raise SemanticError(f"Identifier '{name}' is already declared in this scope.", line, col)
-
         if name in target_scope:
             raise SemanticError(f"Identifier '{name}' is already declared in this scope.", line, col)
             
+        # Add metadata for warnings and initialization tracking
+        symbol_info["line"] = line
+        symbol_info["col"] = col
+        symbol_info["is_used"] = False
+        
         target_scope[name] = symbol_info
 
     def lookup(self, name):
         # Search from inner-most to outer-most
         for scope in reversed(self.scopes):
             if name in scope:
+                scope[name]["is_used"] = True 
                 return scope[name]
         return None

@@ -1,16 +1,16 @@
-# app/semantics/analyzer.py
 from .symbol_table import SymbolTable
 from .errors import SemanticError
 
 class SemanticAnalyzer:
     def __init__(self):
         self.symbols = SymbolTable()
+        self.warnings = []
         self.current_return_type = None
-        # STATE FLAG: Tracks if we are currently inside a 'local ...' declaration wrapper
-        self.is_inside_local_decl = False 
+        self.is_inside_local_decl = False
 
     def analyze(self, tree):
         self.symbols = SymbolTable()
+        self.warnings = []
         self.current_return_type = None
         self.is_inside_local_decl = False
         
@@ -18,6 +18,8 @@ class SemanticAnalyzer:
         
         if tree:
             self.visit(tree)
+            
+        self._check_unused(self.symbols.scopes[0])
 
     def visit(self, node):
         if not node: return None
@@ -52,12 +54,14 @@ class SemanticAnalyzer:
                     func_name = func_name_token["value"]
                     param_types = [p["type"] for p in params]
                     
-                    if not self.symbols.lookup(func_name):
-                        self.symbols.declare(func_name, {
-                            "category": "function",
-                            "return_type": return_type,
-                            "params": param_types
-                        }, func_name_token["line"], func_name_token["col"], is_local=False)
+                    if self.symbols.lookup(func_name):
+                        raise SemanticError(f"Function '{func_name}' is already declared.", func_name_token["line"], func_name_token["col"])
+                    
+                    self.symbols.declare(func_name, {
+                        "category": "function",
+                        "return_type": return_type,
+                        "params": param_types
+                    }, func_name_token["line"], func_name_token["col"], is_local=False)
 
         if "children" in node:
             for child in node["children"]:
@@ -77,7 +81,7 @@ class SemanticAnalyzer:
         self.is_inside_local_decl = False
 
     def visit_var_dec(self, node):
-        is_local = self.is_inside_local_decl
+        is_local = self.is_inside_local_decl or self.symbols.current_scope_level > 0
         
         is_const = self._has_token_recursive(node, "zeta")
         
@@ -99,6 +103,11 @@ class SemanticAnalyzer:
         values = []
         value_init_node = self._find_child(node, "value_init")
         self._collect_values(value_init_node, values)
+
+        if values and len(values) > len(identifiers):
+            err_line = identifiers[0]["line"] if identifiers else 0
+            err_col = identifiers[0]["col"] if identifiers else 0
+            raise SemanticError(f"Too many values ({len(values)}) for the number of variables ({len(identifiers)}).", err_line, err_col)
 
         for i, ident_token in enumerate(identifiers):
             var_name = ident_token["value"]
@@ -133,7 +142,8 @@ class SemanticAnalyzer:
                 "category": "variable",
                 "type": final_type,
                 "is_const": is_const,
-                "static_value": static_val
+                "static_value": static_val,
+                "is_initialized": val_node is not None or is_lumina # NEW
             }, line, col, is_local=is_local)
 
     # ==========================================
@@ -189,6 +199,8 @@ class SemanticAnalyzer:
                 raise SemanticError(f"Variable '{var_name}' not declared.", line, col)
             if symbol.get("is_const"):
                 raise SemanticError(f"Cannot reassign constant variable '{var_name}'.", line, col)
+            
+            symbol["is_initialized"] = True
 
             assign_val = self._find_child(node, "assignment_value")
             val_wrapper = self._find_child(assign_val, "value") 
@@ -211,6 +223,9 @@ class SemanticAnalyzer:
         """
         if not node or "children" not in node: return
 
+        statements_node = self._find_child(node, "statements")
+        self._check_no_starting_semicolon(statements_node, "Condition cannot be followed by a semicolon.")
+
         for child in node["children"]:
             if not child: continue
             
@@ -219,12 +234,18 @@ class SemanticAnalyzer:
             if child.get("type") == "statements":
                 self.symbols.enter_scope()
                 self.visit(child)
-                self.symbols.exit_scope()
+                popped = self.symbols.exit_scope()
+                self._check_unused(popped)
             else:
                 self.visit(child)
 
     def visit_conditions(self, node):
         if not node: return
+
+        tokens = self._get_all_tokens(node)
+        for t in tokens:
+            if t.get("value") == ";":
+                raise SemanticError("Conditions cannot contain a semicolon.", t.get("line", 0), t.get("col", 0))
         
         # Check if the condition directly contains an expression
         expr_node = self._find_child(node, "expression")
@@ -238,7 +259,8 @@ class SemanticAnalyzer:
         self.symbols.enter_loop()
         self.symbols.enter_scope()
         self.generic_visit(node)
-        self.symbols.exit_scope()
+        popped = self.symbols.exit_scope()
+        self._check_unused(popped)
         self.symbols.exit_loop()
 
     def visit_loop_for_statement(self, node):
@@ -274,7 +296,8 @@ class SemanticAnalyzer:
         if loop_statements:
             self.visit(loop_statements)
         
-        self.symbols.exit_scope()
+        popped = self.symbols.exit_scope()
+        self._check_unused(popped)
         self.symbols.exit_loop()
 
     def _validate_for_start(self, for_start_node):
@@ -298,7 +321,8 @@ class SemanticAnalyzer:
             self.symbols.declare(var_name, {
                 "category": "variable",
                 "type": "kai",
-                "is_const": False
+                "is_const": False,
+                "is_initialized": True
             }, line, col, is_local=True)
             
         else:
@@ -330,6 +354,9 @@ class SemanticAnalyzer:
         if not func_def:
             self.generic_visit(node)
             return
+        
+        statements_node = self._find_child(func_def, "statements")
+        self._check_no_starting_semicolon(statements_node, "Function definition cannot be followed by a semicolon.")
 
         func_type_node = self._find_child(func_def, "func_data_type")
         return_type = self._extract_type_name(func_type_node)
@@ -349,7 +376,8 @@ class SemanticAnalyzer:
                 self.symbols.declare(func_name, {
                     "category": "function",
                     "return_type": return_type,
-                    "params": param_types
+                    "params": param_types,
+                    "is_initialized": True
                 }, func_name_token["line"], func_name_token["col"], is_local=False)
 
         self.current_return_type = return_type
@@ -359,14 +387,16 @@ class SemanticAnalyzer:
             self.symbols.declare(p["name"], {
                 "category": "variable",
                 "type": p["type"],
-                "is_const": False
+                "is_const": False,
+                "is_initialized": True
             }, p["line"], p["col"], is_local=True)
         
         statements = self._find_child(func_def, "statements")
         if statements:
             self.visit(statements)
         
-        self.symbols.exit_scope()
+        popped = self.symbols.exit_scope()
+        self._check_unused(popped)
         self.current_return_type = None
 
         for child in node.get("children", []):
@@ -459,6 +489,7 @@ class SemanticAnalyzer:
         tail = self._find_child(node, "func_call_args_tail")
         if tail:
             self._collect_args(tail, arg_list)
+            
     # ==========================================
     # 5. EXPRESSIONS & TABLES
     # ==========================================
@@ -469,6 +500,20 @@ class SemanticAnalyzer:
         node_type = node.get("type")
         if node_type == "table_nav":
             self.visit_table_nav(node)
+
+        if node_type == "factor_value":
+            ident = self._find_token(node, "identifier")
+            tail = self._find_child(node, "identifier_tail")
+            if ident and tail and self._find_child(tail, "table_index"):
+                sym = self.symbols.lookup(ident["value"])
+                
+                if sym and sym.get("category") != "table":
+                    raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", ident["line"], ident["col"])
+                
+                # Make sure you have this block!
+                if sym and sym.get("category") == "table":
+                    sym["name"] = ident["value"] 
+                    self._validate_table_indices(tail, sym)
             
         if node_type in ["func_call", "func_call_in_expr"]:
             self.visit_func_call(node)
@@ -482,6 +527,7 @@ class SemanticAnalyzer:
         if not node: return 'zeru'
 
         self._check_division_by_zero(node)
+        self._check_string_math(node)
         self._validate_expr_components(node) # Replaces _visit_table_navs_in_expr
 
         types_in_expr = self._collect_types_in_expr(node)
@@ -499,30 +545,36 @@ class SemanticAnalyzer:
             
         return 'unknown'
 
-
     def visit_table_dec(self, node):
         type_node = self._find_child(node, "data_type")
         elem_type = self._extract_type_name(type_node)
         
         ident = self._find_token(node, "identifier")
-        is_local = self.is_inside_local_decl
+        is_local = self.is_inside_local_decl or self.symbols.current_scope_level > 0
         
         if ident:
+            table_keys = set()
             line, col = ident["line"], ident["col"]
             self.symbols.declare(ident["value"], {
                 "category": "table",
                 "type": "hubble",
-                "element_type": elem_type
+                "element_type": elem_type,
+                "is_initialized": True,
+                "keys": table_keys
             }, line, col, is_local=is_local)
 
             elems_node = self._find_child(node, "hubble_elements")
             if elems_node:
-                self._validate_hubble_elements(elems_node, elem_type, line, col)
+                self._validate_hubble_elements(elems_node, elem_type, line, col, table_keys)
 
-    def _validate_hubble_elements(self, node, elem_type, line, col):
+            tail_node = self._find_child(node, "hubble_element_tail")
+            if tail_node:
+                self._validate_hubble_elements(tail_node, elem_type, line, col, table_keys)
+
+    def _validate_hubble_elements(self, node, elem_type, line, col, table_keys=None):
         if not node: return
 
-        if node.get("type") == "hubble_elements":
+        if node.get("type") in ["hubble_elements", "hubble_element_tail"]:
             expr_node = self._find_child(node, "expression")
             func_def_node = self._find_child(node, "func_def")
             table_var_dec_node = self._find_child(node, "table_var_dec")
@@ -532,16 +584,31 @@ class SemanticAnalyzer:
                 if not self._check_coercion(elem_type, expr_type, expr_node):
                     raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
 
-            if func_def_node and elem_type != 'let':
-                raise SemanticError(f"Cannot declare functions inside a strictly typed '{elem_type}' table.", line, col)
-
-            if table_var_dec_node and elem_type != 'let':
-                raise SemanticError(f"Cannot declare variables inside a strictly typed '{elem_type}' table.", line, col)
+            if func_def_node:
+                if elem_type != 'let':
+                    raise SemanticError(f"Cannot declare functions inside a strictly typed '{elem_type}' table.", line, col)
+                if table_keys is not None:
+                    ident = self._find_token(func_def_node, "identifier")
+                    if ident: table_keys.add(ident["value"])
+                if table_var_dec_node:
+                    if elem_type != 'let':
+                        raise SemanticError(f"Cannot declare variables inside a strictly typed '{elem_type}' table.", line, col)
+                    # NEW FIX: Track variable names as object keys
+                    if table_keys is not None:
+                        var_init_node = self._find_child(table_var_dec_node, "var_init_no_semi")
+                        if var_init_node:
+                            idents = []
+                            first_ident = self._find_token(var_init_node, "identifier")
+                            if first_ident: idents.append(first_ident)
+                            multi_node = self._find_child(var_init_node, "multi_identifiers")
+                            self._collect_identifiers(multi_node, idents)
+                            for itok in idents:
+                                table_keys.add(itok["value"])
 
         if "children" in node:
             for child in node["children"]:
                 if child and child.get("type") in ["hubble_elements", "hubble_element_tail"]:
-                    self._validate_hubble_elements(child, elem_type, line, col)
+                    self._validate_hubble_elements(child, elem_type, line, col, table_keys)
 
     def visit_table_nav(self, node):
         ident = self._find_token(node, "identifier")
@@ -555,7 +622,9 @@ class SemanticAnalyzer:
             if sym.get("category") != "table":
                 raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", line, col)
             
-            # If this is an assignment operation (table_nav node contains '=' and 'expression')
+            sym["name"] = ident["value"]
+            self._validate_table_indices(node, sym)
+            
             if self._has_token(node, "="):
                 expr_node = self._find_child(node, "expression")
                 if expr_node:
@@ -574,6 +643,12 @@ class SemanticAnalyzer:
     # ==========================================
     # HELPER METHODS (Guarded)
     # ==========================================
+
+    def _check_unused(self, scope):
+        """Helper to log warnings for unused variables when a scope closes."""
+        for name, info in scope.items():
+            if info.get("category") in ["variable", "table"] and not info.get("is_used", False):
+                self.warnings.append(f"Warning: '{name}' is declared but never used (Line {info.get('line', '?')}).")
 
     def _find_child(self, node, type_name):
         if not node or "children" not in node: return None
@@ -653,8 +728,11 @@ class SemanticAnalyzer:
                 if not sym: 
                     raise SemanticError(f"Undefined variable '{node.get('value')}'", node.get('line'), node.get('col'))
                 
-                if sym.get("category") == "table":
-                    types.add(sym.get("element_type", "unknown"))
+                if sym.get("category") == "function":
+                    raise SemanticError(f"Function '{node.get('value')}' must be called with parentheses ().", node.get('line'), node.get('col'))
+                
+                if sym.get("category") == "variable" and not sym.get("is_initialized", False):
+                    raise SemanticError(f"Variable '{node.get('value')}' is uninitialized and cannot be used.", node.get('line'), node.get('col'))
                 else:
                     types.add(sym.get("type", sym.get("return_type", "unknown")))
                     
@@ -707,8 +785,10 @@ class SemanticAnalyzer:
     def _check_division_by_zero(self, node):
         tokens = self._get_all_tokens(node)
         for i in range(len(tokens) - 1):
-            if tokens[i].get("value") == "/" and str(tokens[i+1].get("value")) == "0":
-                raise SemanticError("Division by zero detected.", tokens[i+1]["line"], tokens[i+1]["col"])
+            val = tokens[i].get("value")
+            # NEW FIX: Added '%' to the zero-check list
+            if val in ["/", "//", "%"] and str(tokens[i+1].get("value")) == "0":
+                raise SemanticError("Division or modulo by zero detected.", tokens[i+1]["line"], tokens[i+1]["col"])
             
     def _get_all_tokens(self, node):
         tokens = []
@@ -726,3 +806,53 @@ class SemanticAnalyzer:
             expr_node = self._find_child(arg_node, "expression")
             if expr_node:
                 self._get_expression_type(expr_node)
+
+    def _check_no_starting_semicolon(self, block_node, error_msg):
+        if block_node and "children" in block_node and len(block_node["children"]) > 0:
+            first_child = block_node["children"][0]
+            # Handle both standard 'statements' and 'loop_statements'
+            if first_child and first_child.get("type") in ["statement", "loop_statement"]:
+                empty_stmt = self._find_child(first_child, "empty_statement")
+                if empty_stmt:
+                    tokens = self._get_all_tokens(empty_stmt)
+                    if tokens:
+                        raise SemanticError(error_msg, tokens[0]["line"], tokens[0]["col"])
+                    
+    def _check_string_math(self, node):
+        # If the expression contains ANY arithmetic operator
+        if self._has_any_token_recursive(node, ['+', '-', '*', '/', '//', '%', '^']):
+            tokens = self._get_all_tokens(node)
+            for t in tokens:
+                if t.get("token_type") in ["string", "char"]:
+                    val = str(t.get("value", "")).strip("\"'")
+                    try:
+                        float(val) # Test if the string holds a numerical value
+                    except ValueError:
+                        raise SemanticError(f"String literal '{val}' cannot be used in an arithmetic expression.", t["line"], t["col"])
+    
+    def _validate_table_indices(self, node, table_sym=None):
+        if not node: return
+        if node.get("type") == "index_val":
+            
+            # 1. Handle string keys (Only allowed for 'let' object tables)
+            str_token = self._find_token(node, "string")
+            if str_token:
+                if table_sym and table_sym.get("element_type") == "let":
+                    key_val = str_token.get("value", "").strip("\"'")
+                    if "keys" in table_sym and key_val not in table_sym["keys"]:
+                        raise SemanticError(f"Property '{key_val}' is not defined in hubble '{table_sym.get('name', 'table')}'.", str_token["line"], str_token["col"])
+                else:
+                    raise SemanticError("Standard tables only support numeric indexing, not string keys.", str_token["line"], str_token["col"])
+            
+            # 2. Check if a variable used as an index is declared and initialized
+            ident = self._find_token(node, "identifier")
+            if ident:
+                idx_sym = self.symbols.lookup(ident["value"])
+                if not idx_sym:
+                    raise SemanticError(f"Undefined variable '{ident['value']}' used as index.", ident["line"], ident["col"])
+                if idx_sym.get("category") == "variable" and not idx_sym.get("is_initialized", False):
+                    raise SemanticError(f"Variable '{ident['value']}' used as index is uninitialized.", ident["line"], ident["col"])
+        
+        if "children" in node:
+            for child in node["children"]:
+                self._validate_table_indices(child, table_sym)

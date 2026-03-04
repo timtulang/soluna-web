@@ -130,6 +130,7 @@ def run_pipeline(code: str):
     # -------------------------------------------------------------------------
     parse_tree = None
     parser_error = None
+    warnings = []
     
     # Only proceed if Lexer gave us clean tokens
     if len(lexer_errors) == 0 and len(tokens_from_lexer) > 0:
@@ -149,10 +150,14 @@ def run_pipeline(code: str):
 
                 # D. Semantic Analysis
                 # Checks for logic errors (e.g. redeclaration)
+
                 if parse_tree:
                     analyzer = SemanticAnalyzer()
                     try:
                         analyzer.analyze(parse_tree)
+                        # NEW: Extract the warnings if analysis succeeds
+                        warnings = [{"type": "WARNING", "message": w} for w in analyzer.warnings]
+                        
                     except SemanticError as se:
                         # Convert Semantic Logic Error into a Frontend Error
                         lexer_errors.append({
@@ -160,10 +165,8 @@ def run_pipeline(code: str):
                             "message": se.message,
                             "line": se.line,
                             "col": se.col,
-                            "start": 0, "end": 0 # Logic errors often span multiple tokens, so we default 0
+                            "start": 0, "end": 0 
                         })
-                        # IMPORTANT: Invalid semantics means the code is broken.
-                        # Hide the success tree so the UI shows the error state.
                         parse_tree = None
             else:
                 # This should technically be caught by parser.parse()'s exception handler,
@@ -174,7 +177,7 @@ def run_pipeline(code: str):
             # Captures Syntax Errors thrown by EarleyParser._handle_error
             parser_error = str(e).strip()
 
-    return final_tokens, lexer_errors, parse_tree, parser_error
+    return final_tokens, lexer_errors, parse_tree, parser_error, warnings
 
 
 @app.websocket("/ws")
@@ -190,7 +193,7 @@ async def websocket_endpoint(websocket: WebSocket):
             except (json.JSONDecodeError, AttributeError):
                 code = data
 
-            tokens, errors, parse_tree, parser_err = run_pipeline(code)
+            tokens, errors, parse_tree, parser_err, warnings = run_pipeline(code)
 
             if parser_err:
                 errors.append({
@@ -199,9 +202,11 @@ async def websocket_endpoint(websocket: WebSocket):
                     "line": 0, "col": 0, "start": 0, "end": 0
                 })
 
+            # NEW: Add warnings to the payload sent to the frontend
             response_payload = {
                 "tokens": tokens,
                 "errors": errors,
+                "warnings": warnings, 
                 "parseTree": parse_tree
             }
             await websocket.send_text(json.dumps(response_payload))

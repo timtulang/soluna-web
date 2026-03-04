@@ -133,7 +133,6 @@ SOLUNA_GRAMMAR = {
         Production('statement', ['dec_and_init']),
         Production('statement', ['assignment_statement']),
         Production('statement', ['local_dec']),
-        Production('statement', ['func_def']),
         Production('statement', ['func_return']),
         Production('statement', ['func_call']),
         Production('statement', ['conditional_statement']),
@@ -146,16 +145,13 @@ SOLUNA_GRAMMAR = {
         Production('statement', ['label_goto'])
     ],
 
-    # NEW: Loop Statements (LOOP BLOCKS - BREAKS ALLOWED)
     'loop_statements': [
         Production('loop_statements', ['loop_statement', 'loop_statements']),
         Production('loop_statements', [])
     ],
     'loop_statement': [
-        Production('loop_statement', ['dec_and_init']),
         Production('loop_statement', ['assignment_statement']),
         Production('loop_statement', ['local_dec']),
-        Production('loop_statement', ['func_def']),
         Production('loop_statement', ['func_return']),
         Production('loop_statement', ['func_call']),
         Production('loop_statement', ['conditional_statement_in_loop']),

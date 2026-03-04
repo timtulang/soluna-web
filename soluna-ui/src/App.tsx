@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState } from "react";
-import type { ChangeEvent, KeyboardEvent } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
+import type { ChangeEvent } from "react";
+import MonacoEditor, { type OnMount } from "@monaco-editor/react";
+import type * as MonacoTypes from "monaco-editor";
 
 // --- Types ---
 
@@ -34,6 +36,7 @@ type ParseNode = {
 type WsMessage = {
   tokens?: Token[];
   errors?: LexerError[];
+  warnings?: { type: string, message: string }[]; 
   parseTree?: ParseNode;
 };
 
@@ -129,6 +132,7 @@ const App: React.FC = () => {
   const [tokens, setTokens] = useState<Token[]>([]);
   const [parseTree, setParseTree] = useState<ParseNode | null>(null);
   const [errors, setErrors] = useState<LexerError[]>([]);
+  const [warnings, setWarnings] = useState<{ type: string, message: string }[]>([]);
 
   // --- UI State ---
   const [showLeftSidebar, setShowLeftSidebar] = useState(true);
@@ -153,8 +157,7 @@ const App: React.FC = () => {
   // --- Refs ---
   const wsRef = useRef<WebSocket | null>(null);
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const lineNumbersRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- WebSocket Setup ---
@@ -172,6 +175,12 @@ const App: React.FC = () => {
           const data: WsMessage = JSON.parse(ev.data);
           if (data.tokens) setTokens(data.tokens);
           if (data.errors) setErrors(data.errors);
+
+          if (data.warnings) {
+              setWarnings(data.warnings);
+          } else {
+              setWarnings([]);
+          }
           
           if (data.parseTree) {
              setParseTree(data.parseTree);
@@ -248,26 +257,252 @@ const App: React.FC = () => {
   }, [autoCompile]);
 
   const activeFile = files.find(f => f.id === activeFileId) || files[0];
-  const lineCount = activeFile.content.split('\n').length;
-  const lines = Array.from({ length: lineCount }, (_, i) => i + 1);
 
-  function handleCodeChange(e: ChangeEvent<HTMLTextAreaElement>) {
-    const newContent = e.target.value;
+  function handleCodeChange(value: string | undefined) {
+    const newContent = value ?? "";
     setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content: newContent } : f));
     triggerAnalysis(newContent);
   }
 
-  function handleKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === 'Tab') {
-      e.preventDefault(); 
-      const target = e.currentTarget;
-      const start = target.selectionStart; const end = target.selectionEnd;
-      const newContent = activeFile.content.substring(0, start) + "    " + activeFile.content.substring(end);
-      setFiles(prev => prev.map(f => f.id === activeFileId ? { ...f, content: newContent } : f));
-      triggerAnalysis(newContent);
-      setTimeout(() => { if (textareaRef.current) textareaRef.current.selectionStart = textareaRef.current.selectionEnd = start + 4; }, 0);
+  const handleEditorMount: OnMount = useCallback((editor, monaco) => {
+    editorRef.current = editor;
+
+    // ── Soluna keyword sets (derived from grammar.py) ──────────────────────
+    // Data types
+    const TYPES    = ['kai', 'flux', 'selene', 'blaze', 'lani', 'let'];
+    // Control flow
+    const CONTROL  = ['sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos'];
+    // Declarations / modifiers
+    const DECL     = ['zeta', 'void', 'local', 'hubble'];
+    // Functions & I/O
+    const FUNCS    = ['zara', 'lumina', 'nova', 'lumen'];
+    // Booleans & logical operators
+    const LITERALS = ['iris', 'sage'];
+    const LOGICAL  = ['not', 'and', 'or'];
+    // Misc
+    const MISC     = ['leo', 'label'];
+
+    const ALL_KEYWORDS = [...TYPES, ...CONTROL, ...DECL, ...FUNCS, ...LITERALS, ...LOGICAL, ...MISC];
+
+    // Register Soluna language
+    if (!monaco.languages.getLanguages().find((l: MonacoTypes.languages.ILanguageExtensionPoint) => l.id === 'soluna')) {
+      monaco.languages.register({ id: 'soluna' });
+
+      // ── Tokenizer ─────────────────────────────────────────────────────────
+      const kwRegex = new RegExp(
+        `\\b(${ALL_KEYWORDS.join('|')})\\b`
+      );
+      monaco.languages.setMonarchTokensProvider('soluna', {
+        keywords: ALL_KEYWORDS,
+        tokenizer: {
+          root: [
+            // Comments
+            [/\/\/.*$/, 'comment'],
+            [/\/\*/, 'comment', '@block_comment'],
+            // Strings
+            [/"([^"\\]|\\.)*$/, 'string.invalid'],
+            [/"/, 'string', '@string_double'],
+            // Chars
+            [/'[^\\']'/, 'string.char'],
+            // Keywords (must come before identifier rule)
+            [kwRegex, 'keyword'],
+            // String-length operator  #identifier
+            [/#[a-zA-Z_]\w*/, 'operator.length'],
+            // Identifiers
+            [/[a-zA-Z_]\w*/, 'identifier'],
+            // Numbers
+            [/\d+\.\d*([eE][+-]?\d+)?/, 'number.float'],
+            [/\d+/, 'number'],
+            // Multi-char operators first
+            [/\/\/|&&|\|\||!=|==|>=|<=|\+\+|--|[+\-]=|[*\/]=|%=|\.\.|[+\-*\/%^<>=!]/, 'operator'],
+            // Brackets
+            [/[{}()\[\]]/, 'delimiter.bracket'],
+            // Delimiters
+            [/[;,.]/, 'delimiter'],
+          ],
+          block_comment: [
+            [/[^/*]+/, 'comment'],
+            [/\*\//, 'comment', '@pop'],
+            [/[/*]/, 'comment'],
+          ],
+          string_double: [
+            [/[^\\"]+/, 'string'],
+            [/\\./, 'string.escape'],
+            [/"/, 'string', '@pop'],
+          ],
+        },
+      });
+
+      // ── Theme ─────────────────────────────────────────────────────────────
+      monaco.editor.defineTheme('soluna-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [
+          // Control flow keywords — purple
+          { token: 'keyword',           foreground: 'c084fc', fontStyle: 'bold' },
+          // Identifiers — blue
+          { token: 'identifier',        foreground: '60a5fa' },
+          // Numbers — green
+          { token: 'number',            foreground: '4ade80' },
+          { token: 'number.float',      foreground: '4ade80' },
+          // Strings — green
+          { token: 'string',            foreground: '4ade80' },
+          { token: 'string.char',       foreground: '4ade80' },
+          { token: 'string.escape',     foreground: 'facc15' },
+          { token: 'string.invalid',    foreground: 'f87171' },
+          // Comments — muted zinc
+          { token: 'comment',           foreground: '52525b', fontStyle: 'italic' },
+          // Brackets — yellow
+          { token: 'delimiter.bracket', foreground: 'facc15' },
+          // Operators — zinc
+          { token: 'operator',          foreground: 'a1a1aa' },
+          { token: 'operator.length',   foreground: 'facc15' },
+          // Delimiters
+          { token: 'delimiter',         foreground: 'a1a1aa' },
+        ],
+        colors: {
+          'editor.background':                    '#000000',
+          'editor.foreground':                    '#d4d4d8',
+          'editorLineNumber.foreground':           '#3f3f46',
+          'editorLineNumber.activeForeground':     '#facc15',
+          'editor.lineHighlightBackground':        '#18181b',
+          'editorCursor.foreground':               '#facc15',
+          'editor.selectionBackground':            '#facc1540',
+          'editorIndentGuide.background':          '#27272a',
+          'editorWidget.background':               '#09090b',
+          'editorSuggestWidget.background':        '#09090b',
+          'editorSuggestWidget.border':            '#3f3f46',
+          'editorSuggestWidget.selectedBackground':'#facc1520',
+          'editorSuggestWidget.highlightForeground':'#facc15',
+          'list.hoverBackground':                  '#18181b',
+          'list.activeSelectionBackground':        '#facc1520',
+          'list.activeSelectionForeground':        '#facc15',
+        },
+      });
+      monaco.editor.setTheme('soluna-dark');
+
+      // ── Completion Provider ───────────────────────────────────────────────
+      monaco.languages.registerCompletionItemProvider('soluna', {
+        provideCompletionItems: (model: MonacoTypes.editor.ITextModel, position: MonacoTypes.Position) => {
+          const word = model.getWordUntilPosition(position);
+          const range: MonacoTypes.IRange = {
+            startLineNumber: position.lineNumber,
+            endLineNumber:   position.lineNumber,
+            startColumn:     word.startColumn,
+            endColumn:       word.endColumn,
+          };
+          const KW  = monaco.languages.CompletionItemKind.Keyword;
+          const SN  = monaco.languages.CompletionItemKind.Snippet;
+          const ITR = monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet;
+
+          const suggestions: MonacoTypes.languages.CompletionItem[] = [
+
+            // ── Type declarations ──────────────────────────────────────────
+            { label: 'kai',    kind: KW, insertText: 'kai ${1:name};',             insertTextRules: ITR, detail: 'int',    documentation: 'Integer variable declaration', range },
+            { label: 'flux',   kind: KW, insertText: 'flux ${1:name};',            insertTextRules: ITR, detail: 'float',  documentation: 'Float variable declaration',   range },
+            { label: 'selene', kind: KW, insertText: 'selene ${1:name};',          insertTextRules: ITR, detail: 'double', documentation: 'Double variable declaration',  range },
+            { label: 'blaze',  kind: KW, insertText: 'blaze ${1:name};',           insertTextRules: ITR, detail: 'char',   documentation: 'Char variable declaration',    range },
+            { label: 'lani',   kind: KW, insertText: 'lani ${1:name};',            insertTextRules: ITR, detail: 'bool',   documentation: 'Bool variable declaration',    range },
+            { label: 'let',    kind: KW, insertText: 'let ${1:name};',             insertTextRules: ITR, detail: 'string', documentation: 'String variable declaration',  range },
+            { label: 'void',   kind: KW, insertText: 'void',                       insertTextRules: ITR, detail: 'void return type', range },
+            { label: 'zeta',   kind: KW, insertText: 'zeta',                       insertTextRules: ITR, detail: 'const modifier', documentation: 'Makes variable constant', range },
+            { label: 'local',  kind: KW, insertText: 'local',                      insertTextRules: ITR, detail: 'local scope',    documentation: 'Local variable declaration', range },
+
+            // ── Snippets: var declaration with init ────────────────────────
+            { label: 'kai =',    kind: SN, insertText: 'kai ${1:name} = ${2:0};',       insertTextRules: ITR, detail: 'int with value',    range },
+            { label: 'flux =',   kind: SN, insertText: 'flux ${1:name} = ${2:0.0};',    insertTextRules: ITR, detail: 'float with value',  range },
+            { label: 'selene =', kind: SN, insertText: 'selene ${1:name} = ${2:0.0};',  insertTextRules: ITR, detail: 'double with value', range },
+            { label: 'blaze =',  kind: SN, insertText: 'blaze ${1:name} = \'${2:a}\';', insertTextRules: ITR, detail: 'char with value',   range },
+            { label: 'lani =',   kind: SN, insertText: 'lani ${1:name} = ${2:iris};',   insertTextRules: ITR, detail: 'bool with value',   range },
+            { label: 'let =',    kind: SN, insertText: 'let ${1:name} = "${2:value}";', insertTextRules: ITR, detail: 'string with value', range },
+            { label: 'zeta kai', kind: SN, insertText: 'zeta kai ${1:name} = ${2:0};',  insertTextRules: ITR, detail: 'const int',         range },
+
+            // ── Hubble (tables/arrays) ─────────────────────────────────────
+            { label: 'hubble', kind: KW, insertText: 'hubble',                           insertTextRules: ITR, detail: 'table/array keyword', range },
+            { label: 'hubble []', kind: SN,
+              insertText: 'hubble ${1:kai} ${2:name} = { ${3:elements} };',
+              insertTextRules: ITR, detail: 'Table declaration', documentation: 'Declare a Hubble table', range },
+
+            // ── Function definition ────────────────────────────────────────
+            { label: 'func', kind: SN,
+              insertText: '${1:void} ${2:name}(${3:params})\n\t${4}\nmos',
+              insertTextRules: ITR, detail: 'Function definition', documentation: 'func_def: return_type name(params) ... mos', range },
+            { label: 'kai func', kind: SN,
+              insertText: 'kai ${1:name}(${2:params})\n\t${3}\n\tzara ${4:0};\nmos',
+              insertTextRules: ITR, detail: 'int-returning function', range },
+            { label: 'void func', kind: SN,
+              insertText: 'void ${1:name}(${2:params})\n\t${3}\nmos',
+              insertTextRules: ITR, detail: 'void function', range },
+            { label: 'zara', kind: KW,
+              insertText: 'zara ${1:value};',
+              insertTextRules: ITR, detail: 'return statement', documentation: 'Return a value from a function', range },
+
+            // ── Conditionals ───────────────────────────────────────────────
+            { label: 'sol', kind: SN,
+              insertText: 'sol ${1:condition}\n\t${2}\nmos',
+              insertTextRules: ITR, detail: 'if statement', documentation: 'sol condition ... mos', range },
+            { label: 'sol soluna luna', kind: SN,
+              insertText: 'sol ${1:condition}\n\t${2}\nmos\nsoluna ${3:condition}\n\t${4}\nmos\nluna\n\t${5}\nmos',
+              insertTextRules: ITR, detail: 'if / else if / else', range },
+            { label: 'soluna', kind: SN,
+              insertText: 'soluna ${1:condition}\n\t${2}\nmos',
+              insertTextRules: ITR, detail: 'else-if branch', documentation: 'soluna condition ... mos', range },
+            { label: 'luna', kind: SN,
+              insertText: 'luna\n\t${1}\nmos',
+              insertTextRules: ITR, detail: 'else branch', documentation: 'luna ... mos', range },
+
+            // ── Loops ──────────────────────────────────────────────────────
+            { label: 'orbit', kind: SN,
+              insertText: 'orbit ${1:condition} cos\n\t${2}\nmos',
+              insertTextRules: ITR, detail: 'while loop', documentation: 'orbit condition cos ... mos', range },
+            { label: 'phase', kind: SN,
+              insertText: 'phase kai ${1:i} = ${2:0}, ${3:limit}, ${4:1} cos\n\t${5}\nmos',
+              insertTextRules: ITR, detail: 'for loop', documentation: 'phase start, limit, step cos ... mos', range },
+            { label: 'wax wane', kind: SN,
+              insertText: 'wax\n\t${1}\nwane ${2:condition}',
+              insertTextRules: ITR, detail: 'repeat-until loop', documentation: 'wax ... wane condition', range },
+            { label: 'warp', kind: KW,
+              insertText: 'warp;',
+              insertTextRules: ITR, detail: 'break statement', range },
+            { label: 'mos', kind: KW,
+              insertText: 'mos',
+              insertTextRules: ITR, detail: 'end block', documentation: 'Closes a function, if, or loop block', range },
+            { label: 'cos', kind: KW,
+              insertText: 'cos',
+              insertTextRules: ITR, detail: 'open loop body', documentation: 'Separates loop condition from body', range },
+
+            // ── I/O ────────────────────────────────────────────────────────
+            { label: 'nova', kind: SN,
+              insertText: 'nova(${1:expression});',
+              insertTextRules: ITR, detail: 'print (no newline)', documentation: 'nova(expr);', range },
+            { label: 'lumen', kind: SN,
+              insertText: 'lumen(${1:expression});',
+              insertTextRules: ITR, detail: 'println (with newline)', documentation: 'lumen(expr);', range },
+            { label: 'lumina', kind: SN,
+              insertText: 'lumina()',
+              insertTextRules: ITR, detail: 'input function', documentation: 'Reads user input', range },
+
+            // ── Boolean literals ───────────────────────────────────────────
+            { label: 'iris', kind: KW, insertText: 'iris', insertTextRules: ITR, detail: 'true',  range },
+            { label: 'sage', kind: KW, insertText: 'sage', insertTextRules: ITR, detail: 'false', range },
+
+            // ── Logical operators ──────────────────────────────────────────
+            { label: 'and',  kind: KW, insertText: 'and',  insertTextRules: ITR, detail: 'logical AND', range },
+            { label: 'or',   kind: KW, insertText: 'or',   insertTextRules: ITR, detail: 'logical OR',  range },
+            { label: 'not',  kind: KW, insertText: 'not',  insertTextRules: ITR, detail: 'logical NOT', range },
+
+            // ── Labels / Goto ──────────────────────────────────────────────
+            { label: 'label', kind: KW, insertText: 'label ${1:name};', insertTextRules: ITR, detail: 'label declaration', range },
+            { label: 'leo',   kind: SN, insertText: 'leo label ${1:name};', insertTextRules: ITR, detail: 'goto label', range },
+          ];
+
+          return { suggestions };
+        },
+      });
+    } else {
+      monaco.editor.setTheme('soluna-dark');
     }
-  }
+  }, []);
 
   function handleAddFile() {
     const newId = Date.now().toString();
@@ -307,11 +542,6 @@ const App: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleScroll = () => {
-    if (textareaRef.current && lineNumbersRef.current) {
-      lineNumbersRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
-  };
 
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const semanticErrors = errors.filter(e => e.type === 'SEMANTIC_ERROR');
@@ -414,8 +644,11 @@ const App: React.FC = () => {
             <div className="h-9 flex bg-zinc-950 overflow-x-auto scrollbar-hide border-b border-zinc-900 shrink-0">
               {files.map(file => (
                 <div 
-                  key={file.id}
-                  onClick={() => { setActiveFileId(file.id); triggerAnalysis(file.content, true); }}
+                    key={file.id}
+                  onClick={() => { 
+                    setActiveFileId(file.id); 
+                    triggerAnalysis(file.content, true);
+                  }}
                   className={`
                     group flex items-center gap-2 px-4 min-w-[120px] max-w-[200px] cursor-pointer text-[13px] border-r border-zinc-900
                     ${activeFileId === file.id ? 'bg-black text-yellow-500 border-t-2 border-t-yellow-500' : 'bg-zinc-950 text-zinc-500 border-t-2 border-t-transparent hover:bg-zinc-900'}
@@ -432,20 +665,48 @@ const App: React.FC = () => {
               ))}
             </div>
 
-            {/* Editor Area */}
+            {/* Monaco Editor Area */}
             <div className="flex-1 relative flex overflow-hidden">
-              <div ref={lineNumbersRef} className="w-12 bg-black text-zinc-700 text-right pr-3 pt-4 text-[13px] font-mono leading-6 select-none overflow-hidden shrink-0">
-                 {lines.map(l => <div key={l}>{l}</div>)}
-              </div>
-              <textarea 
-                ref={textareaRef}
-                className="flex-1 bg-black text-zinc-300 p-0 pt-4 pl-2 font-mono text-[13px] leading-6 resize-none outline-none border-none whitespace-pre overflow-auto placeholder-zinc-800"
-                spellCheck="false"
-                placeholder="// Start coding in Soluna..."
+              <MonacoEditor
+                height="100%"
+                width="100%"
+                language="soluna"
                 value={activeFile.content}
                 onChange={handleCodeChange}
-                onKeyDown={handleKeyDown}
-                onScroll={handleScroll}
+                onMount={handleEditorMount}
+                options={{
+                  fontSize: 13,
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+                  fontLigatures: true,
+                  lineHeight: 24,
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'off',
+                  tabSize: 4,
+                  insertSpaces: true,
+                  autoIndent: 'full',
+                  formatOnType: true,
+                  bracketPairColorization: { enabled: true },
+                  matchBrackets: 'always',
+                  autoClosingBrackets: 'always',
+                  autoClosingQuotes: 'always',
+                  suggest: {
+                    showKeywords: true,
+                    showSnippets: true,
+                    showWords: true,
+                  },
+                  quickSuggestions: { other: true, comments: false, strings: false },
+                  parameterHints: { enabled: true },
+                  renderLineHighlight: 'line',
+                  smoothScrolling: true,
+                  cursorBlinking: 'smooth',
+                  cursorSmoothCaretAnimation: 'on',
+                  padding: { top: 16, bottom: 16 },
+                  scrollbar: {
+                    verticalScrollbarSize: 6,
+                    horizontalScrollbarSize: 6,
+                  },
+                }}
               />
             </div>
 
@@ -467,8 +728,10 @@ const App: React.FC = () => {
                            className={`h-full border-b-2 flex items-center gap-2 transition-colors ${activeTerminalTab === 'problems' ? 'text-zinc-200 border-yellow-500' : 'border-transparent hover:text-zinc-300'}`}
                         >
                            PROBLEMS 
-                           {semanticErrors.length > 0 && (
-                               <span className="rounded-full bg-red-900/50 text-red-400 px-1.5 py-0.5 text-[10px] min-w-[1.5em] text-center">{semanticErrors.length}</span>
+                           {(semanticErrors.length + (warnings?.length || 0)) > 0 && (
+                               <span className={`rounded-full px-1.5 py-0.5 text-[10px] min-w-[1.5em] text-center ${semanticErrors.length > 0 ? 'bg-red-900/50 text-red-400' : 'bg-yellow-900/50 text-yellow-500'}`}>
+                                   {semanticErrors.length + (warnings?.length || 0)}
+                               </span>
                            )}
                         </button>
                         <button 
@@ -492,19 +755,33 @@ const App: React.FC = () => {
                     <div className="flex-1 overflow-y-auto p-0 bg-zinc-950 font-mono text-[12px]">
                         {activeTerminalTab === 'problems' && (
                             <div className="flex flex-col">
-                                {semanticErrors.length === 0 ? (
+                                {semanticErrors.length === 0 && (!warnings || warnings.length === 0) ? (
                                     <div className="text-zinc-600 italic p-4 text-xs">No problems detected in workspace.</div>
                                 ) : (
-                                    semanticErrors.map((err, i) => (
-                                        <div key={i} className="group flex items-start gap-2 p-1 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-red-500">
-                                            <div className="mt-0.5"><IconError /></div>
-                                            <div className="flex-1">
-                                                <div className="text-zinc-300">{err.message}</div>
-                                                <div className="text-zinc-600 text-[10px]">{activeFile.name}</div>
+                                    <>
+                                        {/* Render Errors */}
+                                        {semanticErrors.map((err, i) => (
+                                            <div key={`err-${i}`} className="group flex items-start gap-2 p-1 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-red-500">
+                                                <div className="mt-0.5"><IconError /></div>
+                                                <div className="flex-1">
+                                                    <div className="text-zinc-300">{err.message}</div>
+                                                    <div className="text-zinc-600 text-[10px]">{activeFile.name}</div>
+                                                </div>
+                                                <div className="text-zinc-500 text-[11px] group-hover:text-zinc-300">[{err.line}, {err.col}]</div>
                                             </div>
-                                            <div className="text-zinc-500 text-[11px] group-hover:text-zinc-300">[{err.line}, {err.col}]</div>
-                                        </div>
-                                    ))
+                                        ))}
+
+                                        {/* Render Warnings */}
+                                        {warnings && warnings.map((warn, i) => (
+                                            <div key={`warn-${i}`} className="group flex items-start gap-2 p-1 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-yellow-500">
+                                                <div className="mt-0.5 text-yellow-500 font-bold text-[14px] leading-none">⚠</div>
+                                                <div className="flex-1">
+                                                    <div className="text-zinc-300">{warn.message}</div>
+                                                    <div className="text-zinc-600 text-[10px]">{activeFile.name}</div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </>
                                 )}
                             </div>
                         )}
