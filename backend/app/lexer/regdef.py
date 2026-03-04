@@ -58,7 +58,7 @@ REGDEF = {
     
     # 'free_delim' is the most common set, representing whitespace,
     # newlines, or the end of the file.
-    'free_delim': {' ', '\\', '\n', '\0' },
+    'free_delim': {' ', '\\', '\n', '\0', '\t', '\r' },
     
     # 'io_delim' is specific to my I/O keywords (lumen, lumina, nova)
     # which must be followed by a '(' or a comment start '\\'.
