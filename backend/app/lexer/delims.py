@@ -14,7 +14,7 @@ DELIMS = {
     'control_structure_delim': {*REGDEF['io_delim'], *REGDEF['free_delim']},
     'not_delim': {'"', '-', '(', *REGDEF['alphanumeric']},
     'minus_delim': {'(', '!', '"', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
-    'semicolon_delim': {*REGDEF['alphabet'], *REGDEF['free_delim']},
+    'semicolon_delim': {'\n',*REGDEF['alphabet'], *REGDEF['free_delim']},
     'string_concat_delim': {'(', '"', '\'', '_', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
     'string_length_delim': {'(', '"', '\'', '_', *REGDEF['alphabet']},
     'unary_delim': {'(', '*', '%', '/', *REGDEF['relational_operators'], ')', ';', '&', '|', '_', '=', ',', *REGDEF['alphanumeric'], *REGDEF['free_delim']},
