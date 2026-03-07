@@ -151,6 +151,7 @@ SOLUNA_GRAMMAR = {
     ],
     'loop_statement': [
         Production('loop_statement', ['assignment_statement']),
+        Production('loop_statement', ['dec_and_init']),
         Production('loop_statement', ['local_dec']),
         Production('loop_statement', ['func_return']),
         Production('loop_statement', ['func_call']),

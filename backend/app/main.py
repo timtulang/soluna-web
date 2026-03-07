@@ -4,6 +4,9 @@ import json
 import re
 import io
 import sys
+import asyncio
+import queue
+import builtins
 
 from app.lexer.lexer import Lexer 
 from app.parser.parser import EarleyParser
@@ -23,20 +26,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def execute_soluna_code(python_code):
-    old_stdout = sys.stdout
-    redirected_output = sys.stdout = io.StringIO()
-
-    try:
-        exec(python_code, {}) 
-        output = redirected_output.getvalue()
-    except Exception as e:
-        output = f"Runtime Error: {str(e)}"
-    finally:
-        sys.stdout = old_stdout
-
-    return output
 
 def run_pipeline(code: str):
     lexer = Lexer(code)
@@ -122,7 +111,6 @@ def run_pipeline(code: str):
     parse_tree = None
     parser_error = None
     warnings = []
-    console_output = ""
     transpiled_code = ""
     
     if len(lexer_errors) == 0 and len(tokens_from_lexer) > 0:
@@ -145,8 +133,6 @@ def run_pipeline(code: str):
                         transpiler = PythonTranspiler()
                         transpiled_code = transpiler.generate(parse_tree)
                         
-                        console_output = execute_soluna_code(transpiled_code)
-                        
                     except SemanticError as se:
                         lexer_errors.append({
                             "type": "SEMANTIC_ERROR",
@@ -162,22 +148,76 @@ def run_pipeline(code: str):
         except Exception as e:
             parser_error = str(e).strip()
 
-    return final_tokens, lexer_errors, parse_tree, parser_error, warnings, console_output, transpiled_code
+    return final_tokens, lexer_errors, parse_tree, parser_error, warnings, transpiled_code
 
+class ExecutionEnv:
+    def __init__(self, ws: WebSocket, loop: asyncio.AbstractEventLoop, input_q: queue.Queue):
+        self.ws = ws
+        self.loop = loop
+        self.input_q = input_q
+        self.output_buffer = ""
+        
+    def c_print(self, *args, end='\n', sep=' '):
+        text = sep.join(str(a) for a in args) + end
+        self.output_buffer += text
+        asyncio.run_coroutine_threadsafe(
+            self.ws.send_text(json.dumps({"output": self.output_buffer})),
+            self.loop
+        )
+        
+    def c_input(self):
+        # 1. Ask frontend for input
+        asyncio.run_coroutine_threadsafe(
+            self.ws.send_text(json.dumps({
+                "output": self.output_buffer,
+                "isWaitingForInput": True
+            })),
+            self.loop
+        )
+        # 2. Block this thread until WebSocket receives {"input": "..."}
+        val = self.input_q.get()
+        if isinstance(val, Exception):
+            raise val # Aborts execution if user hits Run again
+            
+        # 3. Echo the input to the terminal and hide the input box
+        self.output_buffer += str(val) + "\n"
+        asyncio.run_coroutine_threadsafe(
+            self.ws.send_text(json.dumps({
+                "output": self.output_buffer,
+                "isWaitingForInput": False
+            })),
+            self.loop
+        )
+        return val
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    loop = asyncio.get_running_loop()
+    active_input_q = None
+    
     try:
         while True:
             data = await websocket.receive_text()
             try:
                 payload = json.loads(data)
-                code = payload.get("code", "")
-            except (json.JSONDecodeError, AttributeError):
-                code = data
+            except json.JSONDecodeError:
+                continue
 
-            tokens, errors, parse_tree, parser_err, warnings, console_output, transpiled_code = run_pipeline(code)
+            # Route incoming data to the active thread if it's an input response
+            if "input" in payload:
+                if active_input_q:
+                    active_input_q.put(payload["input"])
+                continue
+                
+            code = payload.get("code", "")
+            
+            # Abort any currently running execution thread if the user presses Run again
+            if active_input_q:
+                active_input_q.put(Exception("ABORT_EXECUTION"))
+                active_input_q = None
+
+            tokens, errors, parse_tree, parser_err, warnings, transpiled_code = run_pipeline(code)
 
             if parser_err:
                 errors.append({
@@ -191,12 +231,49 @@ async def websocket_endpoint(websocket: WebSocket):
                 "errors": errors,
                 "warnings": warnings, 
                 "parseTree": parse_tree,
-                "output": console_output,
-                "transpiledCode": transpiled_code
+                "transpiledCode": transpiled_code,
+                "output": "",
+                "isWaitingForInput": False
             }
             await websocket.send_text(json.dumps(response_payload))
 
+            # Run Execution Phase
+            if not errors and transpiled_code:
+                active_input_q = queue.Queue()
+                env = ExecutionEnv(websocket, loop, active_input_q)
+                
+                def run_code(q, environment, t_code):
+                    try:
+                        custom_globals = builtins.__dict__.copy()
+                        custom_globals["print"] = environment.c_print
+                        custom_globals["input"] = environment.c_input
+                        
+                        # Executes securely using our overridden globals
+                        exec(t_code, custom_globals)
+                        
+                    except Exception as e:
+                        if str(e) != "ABORT_EXECUTION":
+                            err_msg = str(e)
+                            if "Runtime Error" not in err_msg:
+                                err_msg = f"Runtime Error: {err_msg}"
+                                
+                            prefix = "" if environment.output_buffer.endswith("\n") else "\n"
+                            environment.output_buffer += f"{prefix}{err_msg}"
+                            
+                            # Bubble error to UI and kill input box
+                            asyncio.run_coroutine_threadsafe(
+                                websocket.send_text(json.dumps({
+                                    "output": environment.output_buffer,
+                                    "isWaitingForInput": False
+                                })),
+                                loop
+                            )
+                        
+                # Launch the executor in a non-blocking background thread
+                asyncio.create_task(asyncio.to_thread(run_code, active_input_q, env, transpiled_code))
+
     except WebSocketDisconnect:
-        pass
+        if active_input_q:
+            active_input_q.put(Exception("ABORT_EXECUTION"))
     except Exception as e:
-        pass
+        print(f"WS Handling Error: {e}")
