@@ -38,6 +38,8 @@ type WsMessage = {
   errors?: LexerError[];
   warnings?: { type: string, message: string }[]; 
   parseTree?: ParseNode;
+  output?: string;         // <-- NEW: Terminal output from Python execution
+  transpiledCode?: string; // <-- NEW: The generated Python code
 };
 
 type CodeFile = {
@@ -159,6 +161,10 @@ const App: React.FC = () => {
   const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Add these near your other useState declarations
+  const [consoleOutput, setConsoleOutput] = useState<string>("");
+  const [transpiledCode, setTranspiledCode] = useState<string>("");
 
   // --- WebSocket Setup ---
   useEffect(() => {
