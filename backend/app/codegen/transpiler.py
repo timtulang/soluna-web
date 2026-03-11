@@ -109,6 +109,22 @@ class PythonTranspiler:
 
     # ----------------------------------------
 
+    def visit_unary_negation(self, node):
+        if not node or "children" not in node: 
+            return ""
+        
+        results = []
+        for child in node["children"]:
+            if child.get("type") == "TOKEN":
+                val = child.get("value")
+                # Translate both '!' and 'not' to a clean 'not ' with a trailing space
+                if val in ["!", "not"]:
+                    results.append("not ")
+            else:
+                results.append(self.visit(child))
+                
+        return "".join(results)
+
     def visit_var_dec(self, node):
         data_type_node = self._find_child(node, "data_type")
         data_type = self._find_token(data_type_node)["value"] if data_type_node else ""

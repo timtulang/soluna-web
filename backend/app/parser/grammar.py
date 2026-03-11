@@ -205,8 +205,8 @@ SOLUNA_GRAMMAR = {
         Production('expr_factor', ['unary_negation', 'factor_value'])
     ],
     'unary_negation': [
-        Production('unary_negation', ['!']),
-        Production('unary_negation', ['not']),
+        Production('unary_negation', ['!', 'unary_negation']),
+        Production('unary_negation', ['not', 'unary_negation']),
         Production('unary_negation', []) 
     ],
     'factor_value': [
