@@ -29,7 +29,12 @@ class PythonTranspiler:
             "        return val",
             "    except ValueError:",
             "        raise RuntimeError(f\"Runtime Error: Invalid input '{val}' for type {expected_type}\")",
-            ""
+            "",
+            "def __soluna_index(idx):",
+            "   if idx < 1:"
+            "       raise RuntimeError(f\"Runtime Error: list index out of range\")",
+            "   return idx",
+            "",
         ]
         self.code = preamble + self.code
         self.visit(tree)
@@ -372,7 +377,7 @@ class PythonTranspiler:
     def visit_table_index(self, node):
         idx_val = self._find_child(node, "index_val")
         val_str = self.visit(idx_val)
-        return f"[{val_str}]"
+        return f"[__soluna_index({val_str}) - 1]"
 
     def visit_string_or_table_len(self, node):
         ident = self._find_token(node, "identifier")
