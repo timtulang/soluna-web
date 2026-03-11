@@ -26,8 +26,6 @@ class SemanticAnalyzer:
         node_type = node.get("type")
         method_name = f"visit_{node_type}" if node_type else "generic_visit"
         
-        if not hasattr(self, method_name) and node_type:
-            print(f"Unmapped AST Node: {node_type}")
             
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)

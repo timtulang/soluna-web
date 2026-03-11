@@ -139,7 +139,10 @@ def run_backend_process():
 def run_frontend_process():
     """Runs the Vite development server."""
     print_colored("Starting Frontend Server...", "green")
-    cmd = [NPM_EXEC, "run", "dev"]
+    
+    # Append the flags to stop Vite from wiping the console
+    cmd = [NPM_EXEC, "run", "dev", "--", "--clearScreen", "false"]
+    
     subprocess.run(cmd, cwd=FRONTEND_DIR, shell=IS_WINDOWS)
 
 def main():

@@ -97,6 +97,7 @@ class PythonTranspiler:
         for p in parts:
             if p in ["&&", "and"]: py_parts.append("and")
             elif p in ["||", "or"]: py_parts.append("or")
+            elif p == "^": py_parts.append("**") # <-- Add this line
             else: py_parts.append(p)
             
         return " ".join(py_parts)
