@@ -620,7 +620,7 @@ class SemanticAnalyzer:
                 raise SemanticError(f"Variable '{ident['value']}' not declared.", line, col)
             
             if sym.get("category") != "table":
-                raise SemanticError(f"Cannot index non-table variable '{ident['value']}'.", line, col)
+                raise SemanticError(f"Cannot index non-hubble variable '{ident['value']}'.", line, col)
             
             sym["name"] = ident["value"]
             self._validate_table_indices(node, sym)

@@ -219,7 +219,6 @@ const App: React.FC = () => {
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
   const semanticErrors = errors.filter(e => e.type === 'SEMANTIC_ERROR');
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR' && e.type !== 'SEMANTIC_ERROR');
-  const sidebarErrors = activeRightTab === 'lexer' ? lexerErrors : parserErrors;
 
   return (
     <div className="h-screen w-screen flex flex-col bg-black text-zinc-300 font-sans overflow-hidden select-none">
@@ -316,9 +315,9 @@ const App: React.FC = () => {
                     <div className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-yellow-500/50 z-10" onMouseDown={startResizingTerminal} />
                     <div className="flex items-center px-4 h-9 border-b border-zinc-800 gap-6 text-[11px] font-bold text-zinc-500 select-none bg-zinc-900/50 shrink-0 rounded-none">
                         <button onClick={() => setActiveTerminalTab('problems')} className={`h-full border-b-2 flex items-center gap-2 transition-colors rounded-none ${activeTerminalTab === 'problems' ? 'text-zinc-200 border-yellow-500' : 'border-transparent hover:text-zinc-300'}`}>
-                           PROBLEMS {(semanticErrors.length + (warnings?.length || 0)) > 0 && (
-                               <span className={`rounded-none px-1.5 py-0.5 text-[10px] min-w-[1.5em] text-center ${semanticErrors.length > 0 ? 'bg-red-900/50 text-red-400' : 'bg-yellow-900/50 text-yellow-500'}`}>
-                                   {semanticErrors.length + (warnings?.length || 0)}
+                           PROBLEMS {(errors.length + (warnings?.length || 0)) > 0 && (
+                               <span className={`rounded-none px-1.5 py-0.5 text-[10px] min-w-[1.5em] text-center ${errors.length > 0 ? 'bg-red-900/50 text-red-400' : 'bg-yellow-900/50 text-yellow-500'}`}>
+                                   {errors.length + (warnings?.length || 0)}
                                </span>
                            )}
                         </button>
@@ -330,26 +329,41 @@ const App: React.FC = () => {
 
                     <div className="flex-1 overflow-y-auto p-0 bg-zinc-950 font-mono text-[12px] rounded-none">
                         {activeTerminalTab === 'problems' && (
-                            <div className="flex flex-col rounded-none">
-                                {semanticErrors.length === 0 && (!warnings || warnings.length === 0) ? (
+                            <div className="flex flex-col rounded-none py-2">
+                                {errors.length === 0 && (!warnings || warnings.length === 0) ? (
                                     <div className="text-zinc-600 italic p-4 text-xs">No problems detected in workspace.</div>
                                 ) : (
                                     <>
-                                        {semanticErrors.map((err, i) => (
-                                            <div key={`err-${i}`} className="group flex items-start gap-2 p-1 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-red-500 rounded-none">
-                                                <div className="mt-0.5"><IconError /></div>
-                                                <div className="flex-1">
-                                                    <div className="text-zinc-300">{err.message}</div>
+                                        {errors.map((err, i) => {
+                                            let typeLabel = "LEXICAL";
+                                            if (err.type === 'PARSER_ERROR') typeLabel = "SYNTAX";
+                                            else if (err.type === 'SEMANTIC_ERROR') typeLabel = "SEMANTIC";
+
+                                            return (
+                                            <div key={`err-${i}`} className="group flex items-start gap-3 py-2 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-red-500 rounded-none">
+                                                <div className="mt-1 shrink-0"><IconError /></div>
+                                                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="shrink-0 mt-0.5 bg-red-950/80 text-red-400 border border-red-900/50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-sm leading-none">
+                                                            {typeLabel}
+                                                        </span>
+                                                        <span className="text-zinc-300 break-words leading-relaxed">{err.message}</span>
+                                                    </div>
                                                     <div className="text-zinc-600 text-[10px]">{activeFile.name}</div>
                                                 </div>
-                                                <div className="text-zinc-500 text-[11px] group-hover:text-zinc-300">[{err.line}, {err.col}]</div>
+                                                <div className="text-zinc-500 text-[11px] shrink-0 group-hover:text-zinc-300 ml-4 mt-0.5">[{err.line}, {err.col}]</div>
                                             </div>
-                                        ))}
+                                        )})}
                                         {warnings && warnings.map((warn, i) => (
-                                            <div key={`warn-${i}`} className="group flex items-start gap-2 p-1 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-yellow-500 rounded-none">
-                                                <div className="mt-0.5 text-yellow-500 font-bold text-[14px] leading-none">⚠</div>
-                                                <div className="flex-1">
-                                                    <div className="text-zinc-300">{warn.message}</div>
+                                            <div key={`warn-${i}`} className="group flex items-start gap-3 py-2 px-4 hover:bg-zinc-900 cursor-pointer border-l-2 border-transparent hover:border-yellow-500 rounded-none">
+                                                <div className="mt-1 shrink-0 text-yellow-500 font-bold text-[14px] leading-none">⚠</div>
+                                                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="shrink-0 mt-0.5 bg-yellow-950/80 text-yellow-500 border border-yellow-900/50 px-1 py-0.5 text-[9px] font-bold uppercase tracking-wider rounded-sm leading-none">
+                                                            WARNING
+                                                        </span>
+                                                        <span className="text-zinc-300 break-words leading-relaxed">{warn.message}</span>
+                                                    </div>
                                                     <div className="text-zinc-600 text-[10px]">{activeFile.name}</div>
                                                 </div>
                                             </div>
@@ -393,16 +407,6 @@ const App: React.FC = () => {
                 <button onClick={() => setActiveRightTab('parser')} className={`flex-1 h-full text-[11px] font-bold tracking-wider hover:bg-zinc-900 transition-colors rounded-none ${activeRightTab === 'parser' ? 'text-yellow-500 border-b-2 border-yellow-500 bg-zinc-900' : 'text-zinc-500 border-b-2 border-transparent'}`}>PARSER</button>
              </div>
              <div className="flex-1 overflow-auto bg-black p-0 rounded-none">
-                {sidebarErrors.length > 0 && (
-                  <div className="bg-red-900/20 border-b border-red-900/50 p-3 rounded-none">
-                     <div className="flex items-center gap-2 text-red-500 font-bold text-xs mb-2">
-                        <IconError /> {sidebarErrors.length} {activeRightTab === 'lexer' ? 'LEXER' : 'SYNTAX'} ERROR(S)
-                     </div>
-                     {sidebarErrors.map((err, i) => (
-                        <div key={i} className="text-[11px] text-red-400 font-mono mb-1 pl-5 border-l-2 border-red-900/50">Line {err.line}: {err.message}</div>
-                     ))}
-                  </div>
-                )}
                 {activeRightTab === 'lexer' && (
                   tokens.length === 0 ? <div className="p-8 text-center text-zinc-700 text-xs">Waiting for input...</div> :
                   <table className="w-full text-left border-collapse">
@@ -432,13 +436,13 @@ const App: React.FC = () => {
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-80">
                             <div className="mb-3 transform scale-150"><IconError /></div>
                             <h3 className="text-red-400 font-bold text-xs uppercase tracking-wider mb-2">Lexer Errors Detected</h3>
-                            <p className="text-zinc-500 text-[11px] max-w-[200px]">Fix tokens before parsing.</p>
+                            <p className="text-zinc-500 text-[11px] max-w-[200px]">Check Problems tab to fix lexer errors before parsing.</p>
                         </div>
                       ) : parserErrors.length > 0 ? (
                          <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-80">
                             <div className="mb-3 transform scale-150"><IconError /></div>
-                            <h3 className="text-red-400 font-bold text-xs uppercase tracking-wider mb-2">Syntax Errors</h3>
-                            <p className="text-zinc-500 text-[11px] max-w-[200px]">See error list above.</p>
+                            <h3 className="text-red-400 font-bold text-xs uppercase tracking-wider mb-2">Syntax Errors Detected</h3>
+                            <p className="text-zinc-500 text-[11px] max-w-[200px]">Check Problems tab to view syntax errors.</p>
                         </div>
                       ) : parseTree ? (
                         <div className="flex-1 flex flex-col items-center justify-center text-center p-6 opacity-80 animate-in fade-in duration-500">
