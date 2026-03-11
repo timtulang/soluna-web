@@ -384,7 +384,7 @@ STATES = {
     310: State('"', [311]), 
     311: State(DELIMS['most_data_type_delim'], end=True),
     312: State('\\', [313]), 
-    313: State(REGDEF['ascii'], [309, 310]),
+    313: State(REGDEF['ascii'], [309, 310, 312]),
     
     314: State('\\', [315, 318]), 
     315: State('\\', [316]), 
