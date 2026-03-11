@@ -16,6 +16,7 @@ from app.parser.tree_builder import ParseTreeBuilder
 from app.semantics.analyzer import SemanticAnalyzer
 from app.semantics.errors import SemanticError
 from app.codegen.transpiler import PythonTranspiler
+from app.codegen.tacgen import TACGenerator  # <-- Import your new TAC generator
 
 app = FastAPI()
 
@@ -130,8 +131,16 @@ def run_pipeline(code: str):
                         analyzer.analyze(parse_tree)
                         warnings = [{"type": "WARNING", "message": w} for w in analyzer.warnings]
                         
+                        # 1. Generate Python for actual execution
                         transpiler = PythonTranspiler()
                         transpiled_code = transpiler.generate(parse_tree)
+
+                        # 2. Generate TAC and print it to the backend console
+                        tac_gen = TACGenerator()
+                        tac_code = tac_gen.generate(parse_tree)
+                        print("\n=== GENERATED THREE-ADDRESS CODE ===")
+                        print(tac_code)
+                        print("====================================\n")
                         
                     except SemanticError as se:
                         lexer_errors.append({
@@ -166,7 +175,6 @@ class ExecutionEnv:
         )
         
     def c_input(self):
-        # 1. Ask frontend for input
         asyncio.run_coroutine_threadsafe(
             self.ws.send_text(json.dumps({
                 "output": self.output_buffer,
@@ -174,12 +182,10 @@ class ExecutionEnv:
             })),
             self.loop
         )
-        # 2. Block this thread until WebSocket receives {"input": "..."}
         val = self.input_q.get()
         if isinstance(val, Exception):
-            raise val # Aborts execution if user hits Run again
+            raise val 
             
-        # 3. Echo the input to the terminal and hide the input box
         self.output_buffer += str(val) + "\n"
         asyncio.run_coroutine_threadsafe(
             self.ws.send_text(json.dumps({
@@ -204,7 +210,6 @@ async def websocket_endpoint(websocket: WebSocket):
             except json.JSONDecodeError:
                 continue
 
-            # Route incoming data to the active thread if it's an input response
             if "input" in payload:
                 if active_input_q:
                     active_input_q.put(payload["input"])
@@ -212,7 +217,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 
             code = payload.get("code", "")
             
-            # Abort any currently running execution thread if the user presses Run again
             if active_input_q:
                 active_input_q.put(Exception("ABORT_EXECUTION"))
                 active_input_q = None
@@ -237,7 +241,7 @@ async def websocket_endpoint(websocket: WebSocket):
             }
             await websocket.send_text(json.dumps(response_payload))
 
-            # Run Execution Phase
+            # Run Execution Phase using the Python transpiled code
             if not errors and transpiled_code:
                 active_input_q = queue.Queue()
                 env = ExecutionEnv(websocket, loop, active_input_q)
@@ -248,7 +252,6 @@ async def websocket_endpoint(websocket: WebSocket):
                         custom_globals["print"] = environment.c_print
                         custom_globals["input"] = environment.c_input
                         
-                        # Executes securely using our overridden globals
                         exec(t_code, custom_globals)
                         
                     except Exception as e:
@@ -260,7 +263,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             prefix = "" if environment.output_buffer.endswith("\n") else "\n"
                             environment.output_buffer += f"{prefix}{err_msg}"
                             
-                            # Bubble error to UI and kill input box
                             asyncio.run_coroutine_threadsafe(
                                 websocket.send_text(json.dumps({
                                     "output": environment.output_buffer,
@@ -269,7 +271,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 loop
                             )
                         
-                # Launch the executor in a non-blocking background thread
                 asyncio.create_task(asyncio.to_thread(run_code, active_input_q, env, transpiled_code))
 
     except WebSocketDisconnect:

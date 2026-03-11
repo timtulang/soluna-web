@@ -123,8 +123,8 @@ def run_backend_process():
     # --- FIXED COMMAND ---
     # Changed "main:app" to "app.main:app" to match your manual command
     cmd = [
-        VENV_PYTHON, "-m", "uvicorn", 
-        "app.main:app",  # <--- UPDATED HERE
+        VENV_PYTHON, "-u", "-m", "uvicorn", 
+        "app.main:app",
         "--host", BACKEND_HOST, 
         "--port", BACKEND_PORT, 
         "--reload"
