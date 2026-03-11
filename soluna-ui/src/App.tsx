@@ -293,7 +293,10 @@ const App: React.FC = () => {
             <div className="flex-1 relative flex overflow-hidden rounded-none">
               <MonacoEditor
                 height="100%" width="100%" language="soluna"
-                value={activeFile.content} onChange={handleCodeChange} onMount={handleEditorMount}
+                path={activeFile.id}
+                value={activeFile.content} 
+                onChange={handleCodeChange} 
+                onMount={handleEditorMount}
                 options={{
                   fontSize: 13, fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
                   fontLigatures: true, lineHeight: 24, minimap: { enabled: false },
@@ -306,6 +309,7 @@ const App: React.FC = () => {
                   parameterHints: { enabled: true }, renderLineHighlight: 'line',
                   smoothScrolling: true, cursorBlinking: 'smooth', cursorSmoothCaretAnimation: 'on',
                   padding: { top: 16, bottom: 16 }, scrollbar: { verticalScrollbarSize: 6, horizontalScrollbarSize: 6 },
+                  fixedOverflowWidgets: true
                 }}
               />
             </div>
