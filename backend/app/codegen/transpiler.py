@@ -177,7 +177,7 @@ class PythonTranspiler:
         out_type = self.visit(out_type_node).strip()
         arg = self._find_child(node, "output_arg")
         arg_val = self.visit(arg).strip()
-        if out_type == "nova":
+        if out_type == "lumen":
             self.emit(f"print({arg_val}, end='')")
         else:
             self.emit(f"print({arg_val})")
