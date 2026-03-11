@@ -25,6 +25,10 @@ class SemanticAnalyzer:
         if not node: return None
         node_type = node.get("type")
         method_name = f"visit_{node_type}" if node_type else "generic_visit"
+        
+        if not hasattr(self, method_name) and node_type:
+            print(f"Unmapped AST Node: {node_type}")
+            
         visitor = getattr(self, method_name, self.generic_visit)
         return visitor(node)
 
@@ -255,6 +259,14 @@ class SemanticAnalyzer:
             # If it is a nested condition like ( conditions ), keep traversing
             self.generic_visit(node)
 
+    def visit_loop_repeat_until_statement(self, node):
+        self.symbols.enter_loop()
+        self.symbols.enter_scope()
+        self.generic_visit(node)
+        popped = self.symbols.exit_scope()
+        self._check_unused(popped)
+        self.symbols.exit_loop()
+
     def visit_loop_while_statement(self, node):
         self.symbols.enter_loop()
         self.symbols.enter_scope()
@@ -265,7 +277,7 @@ class SemanticAnalyzer:
 
     def visit_loop_for_statement(self, node):
         self.symbols.enter_loop()
-        self.symbols.enter_scope()
+        self.symbols.enter_scope() # Scope 1: Loop Parameters
 
         params_node = self._find_child(node, "for_loop_params")
         if params_node:
@@ -294,10 +306,13 @@ class SemanticAnalyzer:
         # Process Inner Loop Block
         loop_statements = self._find_child(node, "loop_statements")
         if loop_statements:
+            self.symbols.enter_scope() # Scope 2: Nested Loop Body
             self.visit(loop_statements)
+            popped_body = self.symbols.exit_scope()
+            self._check_unused(popped_body)
         
-        popped = self.symbols.exit_scope()
-        self._check_unused(popped)
+        popped_params = self.symbols.exit_scope()
+        self._check_unused(popped_params)
         self.symbols.exit_loop()
 
     def _validate_for_start(self, for_start_node):

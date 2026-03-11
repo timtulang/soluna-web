@@ -140,7 +140,6 @@ SOLUNA_GRAMMAR = {
         Production('statement', ['loop_for_statement']),
         Production('statement', ['loop_repeat_until_statement']),
         Production('statement', ['output_statement']),
-        Production('statement', ['empty_statement']),
         Production('statement', ['label_dec']),
         Production('statement', ['label_goto'])
     ],
@@ -160,7 +159,6 @@ SOLUNA_GRAMMAR = {
         Production('loop_statement', ['loop_for_statement']),
         Production('loop_statement', ['loop_repeat_until_statement']),
         Production('loop_statement', ['output_statement']),
-        Production('loop_statement', ['empty_statement']),
         Production('loop_statement', ['label_dec']),
         Production('loop_statement', ['label_goto']),
         Production('loop_statement', ['break_statements'])
@@ -381,9 +379,6 @@ SOLUNA_GRAMMAR = {
     ],
     'output_arg': [
         Production('output_arg', ['expression'])
-    ],
-    'empty_statement': [
-        Production('empty_statement', [';'])
     ],
     'label_goto': [
         Production('label_goto', ['leo', 'label_dec'])

@@ -20,7 +20,7 @@ export const setupMonaco = (monaco: typeof MonacoTypes) => {
       keywords: ALL_KEYWORDS,
       tokenizer: {
         root: [
-          [/\/\/.*$/, 'comment'],
+          [/\\\\.*$/, 'comment'],
           [/\/\*/, 'comment', '@block_comment'],
           [/"([^"\\]|\\.)*$/, 'string.invalid'],
           [/"/, 'string', '@string_double'],
@@ -30,7 +30,7 @@ export const setupMonaco = (monaco: typeof MonacoTypes) => {
           [/[a-zA-Z_]\w*/, 'identifier'],
           [/\d+\.\d*([eE][+-]?\d+)?/, 'number.float'],
           [/\d+/, 'number'],
-          [/\/\/|&&|\|\||!=|==|>=|<=|\+\+|--|[+\-]=|[*\/]=|%=|\.\.|[+\-*\/%^<>=!]/, 'operator'],
+          [/&&|\|\||!=|==|>=|<=|\+\+|--|[+\-]=|[*\/]=|%=|\.\.|[+\-*\/%^<>=!]/, 'operator'],
           [/[{}()\[\]]/, 'delimiter.bracket'],
           [/[;,.]/, 'delimiter'],
         ],
