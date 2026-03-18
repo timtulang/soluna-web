@@ -35,6 +35,10 @@ class SemanticAnalyzer:
         self.current_return_type = None
         # Flag to know if we're in a 'local' declaration (vs global)
         self.is_inside_local_decl = False
+        # Performance: Cache for node lookups
+        self._node_cache = {}
+        # Performance: Cache for token lookups
+        self._token_cache = {}
 
     def analyze(self, tree):
         """
@@ -51,6 +55,8 @@ class SemanticAnalyzer:
         self.warnings = []
         self.current_return_type = None
         self.is_inside_local_decl = False
+        self._node_cache = {}  # Clear cache for fresh analysis
+        self._token_cache = {}  # Clear cache for fresh analysis
         
         # STEP 1: Pre-pass - declare all functions first
         # This allows functions to reference other functions defined later in the file
@@ -1196,6 +1202,7 @@ class SemanticAnalyzer:
         
         Parse trees are nested structures. This helper finds the first child
         with a specific type, returning None if not found.
+        Performance: Uses caching to avoid repeated lookups.
         
         Analogy: Think of the parse tree as a file system, and this looks for
         the first folder of a given name in the current folder.
@@ -1213,9 +1220,21 @@ class SemanticAnalyzer:
             If not found: expr is None
         """
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), type_name)
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
-            if child and child.get("type") == type_name: return child
-        return None
+            if child and child.get("type") == type_name:
+                result = child
+                break
+        
+        self._node_cache[cache_key] = result
+        return result
 
     def _find_token(self, node, token_type):
         """
@@ -1223,6 +1242,7 @@ class SemanticAnalyzer:
         
         Tokens are leaf nodes from the lexer: identifiers, keywords, operators, etc.
         This looks for the first token of a given type.
+        Performance: Uses caching to avoid repeated lookups.
         
         Args:
             node: A parse tree node
@@ -1237,9 +1257,21 @@ class SemanticAnalyzer:
             If found: ident_token["value"] is the variable name
         """
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), token_type)
+        if cache_key in self._token_cache:
+            return self._token_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
-            if child and child.get("type") == "TOKEN" and child.get("token_type") == token_type: return child
-        return None
+            if child and child.get("type") == "TOKEN" and child.get("token_type") == token_type:
+                result = child
+                break
+        
+        self._token_cache[cache_key] = result
+        return result
 
     def _has_token(self, node, token_type):
         """

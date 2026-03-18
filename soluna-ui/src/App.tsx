@@ -2,9 +2,10 @@ import React, { useEffect, useRef, useState, useCallback } from "react";
 import type { ChangeEvent } from "react";
 import MonacoEditor, { type OnMount } from "@monaco-editor/react";
 import type * as MonacoTypes from "monaco-editor";
-import { type Token, type LexerError, type ParseNode, type WsMessage, type CodeFile, getColor } from "./types";
+import { type Token, type LexerError, type ParseNode, type WsMessage, type CompilationProgress as CompilationProgressType, type CodeFile, getColor } from "./types";
 import { setupMonaco } from "./monacoConfig";
 import { TopMenuBar, StatusBar } from "./UIComponents";
+import { CompilationProgress } from "./CompilationProgress";
 import { IconFile, IconClose, IconChevronRight, IconError, IconCheck } from "./Icons";
 
 const App: React.FC = () => {
@@ -38,6 +39,13 @@ const App: React.FC = () => {
   const [isResizingRight, setIsResizingRight] = useState(false);
   const [isResizingTerminal, setIsResizingTerminal] = useState(false);
 
+  const [compilationProgress, setCompilationProgress] = useState<CompilationProgressType>({ 
+    stage: 'idle', 
+    percentage: 0, 
+    message: '',
+    timestamp: 0
+  });
+
   const wsRef = useRef<WebSocket | null>(null);
   const editorRef = useRef<MonacoTypes.editor.IStandaloneCodeEditor | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,6 +62,12 @@ const App: React.FC = () => {
       ws.addEventListener("message", (ev) => {
         try {
           const data: WsMessage = JSON.parse(ev.data);
+          
+          // Handle progress updates
+          if (data.compilationProgress) {
+            setCompilationProgress(data.compilationProgress);
+          }
+          
           if (data.tokens) setTokens(data.tokens);
           if (data.errors) setErrors(data.errors);
           if (data.warnings) setWarnings(data.warnings);
@@ -217,11 +231,19 @@ const App: React.FC = () => {
   };
 
   const parserErrors = errors.filter(e => e.type === 'PARSER_ERROR');
-  const semanticErrors = errors.filter(e => e.type === 'SEMANTIC_ERROR');
   const lexerErrors = errors.filter(e => e.type !== 'PARSER_ERROR' && e.type !== 'SEMANTIC_ERROR');
 
   return (
     <div className="h-screen w-screen flex flex-col bg-black text-zinc-300 font-sans overflow-hidden select-none">
+      {/* Compilation Progress Popup */}
+      <CompilationProgress 
+        stage={compilationProgress.stage}
+        percentage={compilationProgress.percentage}
+        message={compilationProgress.message}
+        timestamp={compilationProgress.timestamp}
+        onStop={() => setCompilationProgress({ stage: 'idle', percentage: 0, message: '', timestamp: 0 })}
+      />
+      
       <TopMenuBar 
         menuOpen={menuOpen} setMenuOpen={setMenuOpen} handleAddFile={handleAddFile}
         openFile={openFile} fileInputRef={fileInputRef} handleFileRead={handleFileRead}

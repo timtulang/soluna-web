@@ -33,7 +33,15 @@ export type WsMessage = {
   parseTree?: ParseNode;
   output?: string;
   transpiledCode?: string;
-  isWaitingForInput?: boolean; 
+  isWaitingForInput?: boolean;
+  compilationProgress?: CompilationProgress;
+};
+
+export type CompilationProgress = {
+  stage: 'idle' | 'lexing' | 'parsing' | 'semantic' | 'codegen' | 'complete' | 'error';
+  percentage: number;
+  message: string;
+  timestamp: number;
 };
 
 export type CodeFile = {

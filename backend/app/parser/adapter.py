@@ -1,5 +1,22 @@
 from .parser import Token
 
+# Pre-compute reserved words as frozenset (O(1) lookup, faster than list/set membership)
+RESERVED_WORDS = frozenset({
+    'kai', 'flux', 'selene', 'blaze', 'lani', 'let', 'zeta', 'void', 'hubble', 'local',  # Type keywords and modifiers
+    'sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos',      # Control flow keywords
+    'nova', 'lumen', 'lumina', 'zara', 'iris', 'sage', 'and', 'or', 'not', 'leo', 'label'  # I/O and misc
+})
+
+# Map the Lexer's specific types to the generic Grammar types (cached at module level for performance)
+TYPE_MAP = {
+    'kai_lit':    'integer',     # Integer literal (like 5, 42, -3)
+    'flux_lit':   'float',       # Float literal (like 3.14)
+    'blaze_lit':  'char',        # Character literal (like 'a')
+    'selene_lit': 'string',      # String literal (like "hello")
+    'identifier': 'identifier',  # Variable names (like x, myVar)
+    'label':      'label',       # Labels for goto statements
+}
+
 def adapter(raw_tokens_with_metadata):
     """
     TRANSLATOR BETWEEN LEXER AND PARSER
@@ -13,28 +30,10 @@ def adapter(raw_tokens_with_metadata):
     
     Input:  List of tuples like [("5", "kai_lit"), ("x", "identifier"), ...]
     Output: List of Token objects that the Parser can process
+    
+    PERFORMANCE: Uses frozenset for O(1) keyword lookup instead of list membership.
     """
     clean_stream = []
-
-    # Map the Lexer's specific types to the generic Grammar types
-    # Example: "kai_lit" from lexer → "integer" for parser
-    # This reduces noise and makes the grammar simpler
-    TYPE_MAP = {
-        'kai_lit':    'integer',     # Integer literal (like 5, 42, -3)
-        'flux_lit':   'float',       # Float literal (like 3.14)
-        'blaze_lit':  'char',        # Character literal (like 'a')
-        'selene_lit': 'string',      # String literal (like "hello")
-        'identifier': 'identifier',  # Variable names (like x, myVar)
-        'label':      'label',       # Labels for goto statements
-    }
-
-    # ALL Soluna reserved words (keywords) that the parser expects as literal token types
-    # These are special words that have meaning in the language and cannot be used as variable names
-    RESERVED_WORDS = {
-        'kai', 'flux', 'selene', 'blaze', 'lani', 'let', 'zeta', 'void', 'hubble', 'local',  # Type keywords and modifiers
-        'sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos',      # Control flow keywords
-        'nova', 'lumen', 'lumina', 'zara', 'iris', 'sage', 'and', 'or', 'not', 'leo', 'label'  # I/O and misc
-    }
 
     # Loop through each token from the lexer
     for token_tuple, meta in raw_tokens_with_metadata:
@@ -53,6 +52,7 @@ def adapter(raw_tokens_with_metadata):
         # If the token's value (like "kai") is a reserved word, use the word itself as the type.
         # This tells the parser "this is a 'kai' keyword" instead of just "this is an identifier".
         # Example: Token("kai", "kai") instead of Token("identifier", "kai")
+        # O(1) lookup using frozenset instead of list
         if value in RESERVED_WORDS:
             grammar_type = value
 

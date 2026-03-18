@@ -3,6 +3,8 @@ class PythonTranspiler:
         self.indent_level = 0
         self.code = []
         self.symbol_table = {}
+        self._node_cache = {}  # Cache for child lookups (performance optimization)
+        self._token_cache = {}  # Cache for token lookups (performance optimization)
 
     def emit(self, line):
         indent = "    " * self.indent_level
@@ -474,18 +476,43 @@ class PythonTranspiler:
         return ""
 
     def _find_child(self, node, type_name):
+        """Find first child of given type. Uses caching for performance."""
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), type_name)
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
-            if child and child.get("type") == type_name: return child
-        return None
+            if child and child.get("type") == type_name:
+                result = child
+                break
+        
+        self._node_cache[cache_key] = result
+        return result
 
     def _find_token(self, node, token_type=None):
+        """Find first token of given type. Uses caching for performance."""
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), "TOKEN", token_type)
+        if cache_key in self._token_cache:
+            return self._token_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
             if child and child.get("type") == "TOKEN":
                 if not token_type or child.get("token_type") == token_type:
-                    return child
-        return None
+                    result = child
+                    break
+        
+        self._token_cache[cache_key] = result
+        return result
 
     def _has_token(self, node, value):
         if not node or "children" not in node: return False

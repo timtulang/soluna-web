@@ -31,11 +31,15 @@ class TACGenerator:
         - temp_count: Counter for generating unique temporary variable names
         - label_count: Counter for generating unique labels for control flow
         - symbol_table: Maps variable names to their types
+        - _node_cache: Cache for child lookups (performance optimization)
+        - _token_cache: Cache for token lookups (performance optimization)
         """
         self.code = []
         self.temp_count = 0
         self.label_count = 0
         self.symbol_table = {}
+        self._node_cache = {}  # Cache for child lookups
+        self._token_cache = {}  # Cache for token lookups
 
     def new_temp(self):
         """
@@ -1053,6 +1057,7 @@ class TACGenerator:
         Find the first child node of a given type.
         
         Used to navigate the parse tree and extract specific components.
+        Performance: Uses caching to avoid repeated lookups.
         
         Example: _find_child(node, "identifier") finds the first identifier token
         
@@ -1064,15 +1069,28 @@ class TACGenerator:
             The first child node with matching type, or None if not found
         """
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), type_name)
+        if cache_key in self._node_cache:
+            return self._node_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
-            if child and child.get("type") == type_name: return child
-        return None
+            if child and child.get("type") == type_name:
+                result = child
+                break
+        
+        self._node_cache[cache_key] = result
+        return result
 
     def _find_token(self, node, token_type=None):
         """
         Find a token in a node's children.
         
         Tokens are leaf nodes in the parse tree (variable names, operators, etc.).
+        Performance: Uses caching to avoid repeated lookups.
         
         Example: _find_token(node, "identifier") finds an identifier token like "x"
         
@@ -1084,11 +1102,22 @@ class TACGenerator:
             The first token matching the criteria, or None if not found
         """
         if not node or "children" not in node: return None
+        
+        # Check cache first
+        cache_key = (id(node), "TOKEN", token_type)
+        if cache_key in self._token_cache:
+            return self._token_cache[cache_key]
+        
+        # Linear search and cache result
+        result = None
         for child in node.get("children", []):
             if child and child.get("type") == "TOKEN":
                 if not token_type or child.get("token_type") == token_type:
-                    return child
-        return None
+                    result = child
+                    break
+        
+        self._token_cache[cache_key] = result
+        return result
 
     def _has_token(self, node, value):
         """
