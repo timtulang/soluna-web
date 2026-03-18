@@ -31,9 +31,9 @@ class PythonTranspiler:
             "        raise RuntimeError(f\"Runtime Error: Invalid input '{val}' for type {expected_type}\")",
             "",
             "def __soluna_index(idx):",
-            "   if idx < 1:"
-            "       raise RuntimeError(f\"Runtime Error: list index out of range\")",
-            "   return idx",
+            "    if idx < 1:",
+            "        raise RuntimeError(f\"Runtime Error: list index out of range\")",
+            "    return idx + 1",
             "",
         ]
         self.code = preamble + self.code
@@ -61,10 +61,26 @@ class PythonTranspiler:
         return "".join(results)
 
     def _cast_lumina(self, var_name, base_val):
-        if base_val != "input()":
-            return base_val
+        """Cast values based on variable type"""
+        # Handle input() calls
+        if base_val == "input()":
+            var_type = self.symbol_table.get(var_name, "let")
+            return f"__soluna_input('{var_type}')"
+        
+        # Handle type casting for assignments
         var_type = self.symbol_table.get(var_name, "let")
-        return f"__soluna_input('{var_type}')"
+        
+        # Cast to int for kai (integer) types
+        if var_type == "kai":
+            # Wrap the value in int() to truncate floats
+            return f"int({base_val})"
+        
+        # Cast to float for flux/selene (float) types
+        if var_type in ["flux", "selene"]:
+            return f"float({base_val})"
+        
+        # Otherwise return as-is
+        return base_val
 
     # --- Flattening Logic for Expressions ---
     
@@ -97,7 +113,10 @@ class PythonTranspiler:
         for p in parts:
             if p in ["&&", "and"]: py_parts.append("and")
             elif p in ["||", "or"]: py_parts.append("or")
-            elif p == "^": py_parts.append("**") # <-- Add this line
+            elif p == "^": py_parts.append("**")
+            elif p == "%": py_parts.append("%")  # Modulo
+            elif p == "//": py_parts.append("//")  # Floor division - keep as is
+            elif p == "/": py_parts.append("/")  # Regular division - keep as is
             else: py_parts.append(p)
             
         return " ".join(py_parts)
@@ -121,6 +140,23 @@ class PythonTranspiler:
         return self._flatten_and_build_expr(first_operand, tail_node)
 
     # ----------------------------------------
+
+    def visit_expression(self, node):
+        """Handle expression nodes - delegate to appropriate visitor"""
+        if not node or "children" not in node:
+            return ""
+        
+        # Check for simple_expr or multi_expr
+        simple_expr = self._find_child(node, "simple_expr")
+        if simple_expr:
+            return self.visit(simple_expr)
+        
+        multi_expr = self._find_child(node, "multi_expr")
+        if multi_expr:
+            return self.visit(multi_expr)
+        
+        # Fallback: process all children
+        return self.generic_visit(node)
 
     def visit_unary_negation(self, node):
         if not node or "children" not in node: 
@@ -284,8 +320,23 @@ class PythonTranspiler:
         ident_node = self._find_token(node, "identifier")
         if not ident_node: return ""
         func_name = ident_node["value"]
+        
+        # Build parameter list
+        params_list = []
         params_node = self._find_child(node, "func_params")
-        params_str = self.visit(params_node) if params_node else ""
+        if params_node and "children" in params_node:
+            for child in params_node.get("children", []):
+                if child.get("type") == "param":
+                    param_val = self.visit(child)
+                    if param_val:
+                        params_list.append(param_val)
+                elif child.get("type") == "param_tail":
+                    tail_val = self.visit(child)
+                    if tail_val:
+                        # param_tail returns comma-separated values
+                        params_list.extend(tail_val.split(", "))
+        
+        params_str = ", ".join(filter(None, params_list))
         self.emit(f"def {func_name}({params_str}):")
         self.indent_level += 1
         statements = self._find_child(node, "statements")
@@ -297,17 +348,28 @@ class PythonTranspiler:
         return ""
 
     def visit_param(self, node):
+        """Extract parameter name from a param node"""
         ident = self._find_token(node, "identifier")
         return ident["value"] if ident else ""
 
     def visit_param_tail(self, node):
-        res = ""
+        """Handle remaining parameters in parameter list"""
+        if not node or "children" not in node:
+            return ""
+        
+        params = []
         for child in node.get("children", []):
-            if child.get("type") == "TOKEN" and child.get("value") == ",":
-                res += ", "
+            if child.get("type") == "TOKEN":
+                # Skip commas, they're handled by join
+                if child.get("value") != ",":
+                    params.append(child.get("value"))
             else:
-                res += self.visit(child)
-        return res
+                # This is another param node
+                param_val = self.visit(child)
+                if param_val:
+                    params.append(param_val)
+        
+        return ", ".join(params) if params else ""
 
     def visit_func_call(self, node):
         ident = self._find_token(node, "identifier")
@@ -323,6 +385,26 @@ class PythonTranspiler:
         func_name = ident["value"] if ident else ""
         args_str = self.visit(args) if args else ""
         return f"{func_name}({args_str})"
+
+    def visit_func_call_args(self, node):
+        """Handle function call arguments: first arg + tail args"""
+        if not node or "children" not in node:
+            return ""
+        
+        args = []
+        # Get first argument (expression)
+        expr_node = self._find_child(node, "expression")
+        if expr_node:
+            args.append(self.visit(expr_node))
+        
+        # Get remaining arguments from tail
+        tail_node = self._find_child(node, "func_call_args_tail")
+        if tail_node:
+            tail_args = self.visit(tail_node)
+            if tail_args:
+                args.append(tail_args)
+        
+        return ", ".join(filter(None, args))
 
     def visit_func_call_args_tail(self, node):
         res = ""
@@ -367,12 +449,17 @@ class PythonTranspiler:
         if not ident: return ""
         var_name = ident["value"]
         idx_node = self._find_child(node, "table_index")
-        tail_node = self._find_child(node, "nav_tail")
         idx_str = self.visit(idx_node) if idx_node else ""
-        tail_str = self.visit(tail_node) if tail_node else ""
+        
+        # Check if this is an assignment or just a read
         expr = self._find_child(node, "expression")
-        expr_str = self.visit(expr) if expr else ""
-        self.emit(f"{var_name}{idx_str}{tail_str} = {expr_str}")
+        if expr:
+            # This is an assignment: arr[idx] = value
+            expr_str = self.visit(expr)
+            self.emit(f"{var_name}{idx_str} = {expr_str}")
+        else:
+            # This is a read: return the array element access
+            return f"{var_name}{idx_str}"
         return ""
 
     def visit_table_index(self, node):

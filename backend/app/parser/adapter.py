@@ -2,54 +2,70 @@ from .parser import Token
 
 def adapter(raw_tokens_with_metadata):
     """
-    The Lexer speaks one language ('kai_lit'), the Parser speaks another ('integer').
-    This function translates between them.
+    TRANSLATOR BETWEEN LEXER AND PARSER
+    
+    The Lexer (the tokenizer) and Parser are like two people speaking different dialects.
+    The Lexer identifies things like "kai_lit" (a literal integer), but the Parser 
+    expects a more generic name like "integer".
+    
+    This function is the translator that converts the Lexer's output into a form 
+    the Parser can understand.
+    
+    Input:  List of tuples like [("5", "kai_lit"), ("x", "identifier"), ...]
+    Output: List of Token objects that the Parser can process
     """
     clean_stream = []
 
     # Map the Lexer's specific types to the generic Grammar types
+    # Example: "kai_lit" from lexer → "integer" for parser
+    # This reduces noise and makes the grammar simpler
     TYPE_MAP = {
-        'kai_lit':    'integer',
-        'flux_lit':   'float',
-        'blaze_lit':  'char',
-        'selene_lit': 'string',
-        'identifier': 'identifier',
-        'label':      'label',
+        'kai_lit':    'integer',     # Integer literal (like 5, 42, -3)
+        'flux_lit':   'float',       # Float literal (like 3.14)
+        'blaze_lit':  'char',        # Character literal (like 'a')
+        'selene_lit': 'string',      # String literal (like "hello")
+        'identifier': 'identifier',  # Variable names (like x, myVar)
+        'label':      'label',       # Labels for goto statements
     }
 
-    # ALL Soluna reserved words that the parser expects as literal token types
+    # ALL Soluna reserved words (keywords) that the parser expects as literal token types
+    # These are special words that have meaning in the language and cannot be used as variable names
     RESERVED_WORDS = {
-        'kai', 'flux', 'selene', 'blaze', 'lani', 'let', 'zeta', 'void', 'hubble', 'local', 
-        'sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos', 
-        'nova', 'lumen', 'lumina', 'zara', 'iris', 'sage', 'and', 'or', 'not', 'leo', 'label'
+        'kai', 'flux', 'selene', 'blaze', 'lani', 'let', 'zeta', 'void', 'hubble', 'local',  # Type keywords and modifiers
+        'sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos',      # Control flow keywords
+        'nova', 'lumen', 'lumina', 'zara', 'iris', 'sage', 'and', 'or', 'not', 'leo', 'label'  # I/O and misc
     }
 
+    # Loop through each token from the lexer
     for token_tuple, meta in raw_tokens_with_metadata:
         value, type_tag = token_tuple
         
-        # Comments are for humans, not parsers. Yeet them.
+        # SKIP COMMENTS: Comments are for humans to read, not for the parser
+        # So we throw them away here before passing to the parser
         if type_tag == 'comment':
             continue
 
-        # If it's in the map, use the generic name. 
-        # Otherwise (keywords, symbols), keep the original tag.
+        # TRANSLATE TYPE NAMES: Convert lexer-specific type names to generic parser type names
+        # If not in the map, just use the original tag (for symbols like '+', '-', etc.)
         grammar_type = TYPE_MAP.get(type_tag, type_tag)
 
-        # --- THE FIX ---
-        # Force all reserved keywords and functions to use their literal string value 
-        # as their token type, overriding whatever generic category the Lexer gave them.
+        # HANDLE RESERVED WORDS (THE KEY STEP)
+        # If the token's value (like "kai") is a reserved word, use the word itself as the type.
+        # This tells the parser "this is a 'kai' keyword" instead of just "this is an identifier".
+        # Example: Token("kai", "kai") instead of Token("identifier", "kai")
         if value in RESERVED_WORDS:
             grammar_type = value
 
-        # Build the clean Token object with metadata for error reporting
+        # BUILD TOKEN OBJECT with position info for better error messages
+        # When the parser fails, it can tell the user exactly where (line/column) the problem is
         line = meta.get('line', 0)
         col = meta.get('col', 0)
         
         token = Token(
-            type_name=grammar_type, 
-            value=value, 
-            line=line, 
-            col=col
+            type_name=grammar_type,  # What kind of token is this?
+            value=value,              # The actual text (like "5" or "x")
+            line=line,                # Which line in source code
+            col=col                   # Which column in source code
         )
         
         clean_stream.append(token)
