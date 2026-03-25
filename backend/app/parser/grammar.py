@@ -175,7 +175,7 @@ SOLUNA_GRAMMAR = {
         Production('func_params', [])  # Or no parameters
     ],
     'param': [
-        # A single parameter: type and name (like "kai x")
+        Production('param', ['hubble', 'data_type', 'identifier']),
         Production('param', ['data_type', 'identifier'])
     ],
     'param_tail': [
@@ -361,7 +361,7 @@ SOLUNA_GRAMMAR = {
     ],
     'table_nav': [
         # Assigning to an array element: arr[0] = 5;
-        Production('table_nav', ['identifier', 'table_index', 'nav_tail', '=', 'expression', ';'])
+        Production('table_nav', ['identifier', 'table_index', 'nav_tail', '=', 'value', ';'])
     ],
     'table_index': [
         # The bracket notation: [0] or [x] or ["key"]
@@ -376,7 +376,8 @@ SOLUNA_GRAMMAR = {
         # What can be used as an index: numbers, variables, strings
         Production('index_val', ['integer']),
         Production('index_val', ['identifier']),
-        Production('index_val', ['string'])
+        Production('index_val', ['string']),
+        Production('index_val', ['expression']),
     ],
 
     # ========================================================================

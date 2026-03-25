@@ -27,8 +27,7 @@ export const CompilationProgress: React.FC<CompilationProgressProps> = ({
   message,
   onStop
 }) => {
-  // Only show when actively compiling (not idle or complete)
-  const isVisible = stage !== 'idle' && stage !== 'complete';
+  const isVisible = stage !== 'idle' && stage !== 'complete' && stage !== 'error';
 
   if (!isVisible) return null;
 

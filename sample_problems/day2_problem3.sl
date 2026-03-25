@@ -11,7 +11,7 @@ mos
 luna
     kai sum = 0;
     
-    phase kai i = 1, n, 1
+    phase kai i = 1, n, 1 cos
         kai cube = i * i * i;
         sum = sum + cube;
     mos

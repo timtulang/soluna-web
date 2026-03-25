@@ -39,8 +39,13 @@ def run_pipeline(code: str, progress_callback=None):
     3. Semantic Analysis (50-80%)
     4. Code Generation (80-100%)
     """
+    is_disconnected = False  # Track if the socket is dead
     
     async def send_progress(stage: str, percentage: int, message: str):
+        nonlocal is_disconnected
+        if is_disconnected:
+            return  # Stop trying to send if we already know it's disconnected
+            
         """Helper to send progress updates"""
         if progress_callback:
             try:
@@ -53,7 +58,10 @@ def run_pipeline(code: str, progress_callback=None):
                     }
                 }))
             except Exception as e:
-                print(f"Error sending progress: {e}")
+                is_disconnected = True  # Flag it as disconnected to stop further attempts
+                # Only print the error if it's NOT a normal close/disconnect message
+                if "close message" not in str(e).lower() and "disconnect" not in str(e).lower():
+                    print(f"Error sending progress: {e}")
     
     # Get or create event loop for async operations
     try:
@@ -308,7 +316,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     "timestamp": int(time.time() * 1000)
                 }
             }
-            await websocket.send_text(json.dumps(response_payload))
+            
+            # Safely send the final payload
+            try:
+                await websocket.send_text(json.dumps(response_payload))
+            except Exception as e:
+                if "close message" in str(e).lower() or "closed" in str(e).lower():
+                    break # Safely exit the loop if the client already left
+                raise e
 
             # Run Execution Phase using the Python transpiled code
             if not errors and transpiled_code:
@@ -346,4 +361,7 @@ async def websocket_endpoint(websocket: WebSocket):
         if active_input_q:
             active_input_q.put(Exception("ABORT_EXECUTION"))
     except Exception as e:
-        print(f"WS Handling Error: {e}")
+        err_msg = str(e)
+        # Suppress the server crash print if the user just closed the socket
+        if "close message" not in err_msg.lower() and "closed" not in err_msg.lower():
+            print(f"WS Handling Error: {err_msg}")

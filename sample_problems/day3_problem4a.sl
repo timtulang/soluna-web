@@ -1,25 +1,28 @@
-\\\ DAY 3, Problem 4A: Print array elements using recursion
+hubble kai arr = {};
 
-flux printArray(hubble kai arr, kai index, kai size) {
-    sol index < size
-        nova(arr[index] .. " ");
-        printArray(arr, index + 1, size);
+void printArray(kai index, kai size)
+    sol index <= size
+        lumen(arr[index] .. " ");
+        printArray(index + 1, size);
     mos
-    return void;
-}
+    zara;
+mos
 
 nova("=== Print Array Elements (Recursive) ===");
 nova("Input the number of elements to be stored in the array:");
 kai n = lumina();
 
-hubble kai arr = {};
-phase kai i = 0, n, 1
-    nova("element - " .. i .. " : ");
+orbit n < 1 cos
+    nova("Please enter a valid size greater than 0:");
+    n = lumina();
+mos
+
+kai limit = n + 1;
+phase kai i = 1, limit, 1 cos
+    lumen("element - " .. i .. " : ");
     arr[i] = lumina();
 mos
 
 nova("The elements in the array are: ");
-printArray(arr, 0, n);
+printArray(1, n);
 nova("");
-
-return void;

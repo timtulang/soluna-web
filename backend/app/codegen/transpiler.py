@@ -37,6 +37,12 @@ class PythonTranspiler:
             "        raise RuntimeError(f\"Runtime Error: list index out of range\")",
             "    return idx + 1",
             "",
+            "def __soluna_set(arr, idx, val):",
+            "    actual_idx = __soluna_index(idx) - 1",
+            "    if actual_idx >= len(arr):",
+            "        arr.extend([0] * (actual_idx - len(arr) + 1))",
+            "    arr[actual_idx] = val",
+            "",
         ]
         self.code = preamble + self.code
         self.visit(tree)
@@ -195,6 +201,11 @@ class PythonTranspiler:
         return ""
 
     def visit_assignment_statement(self, node):
+        table_nav = self._find_child(node, "table_nav")
+        if table_nav:
+            self.visit_table_nav(table_nav)
+            return ""
+        
         ident_node = self._find_token(node, "identifier")
         if not ident_node: return ""
         var_name = ident_node["value"]
@@ -318,6 +329,10 @@ class PythonTranspiler:
             self.indent_level -= 1
         return ""
 
+    def visit_break_statements(self, node):
+        self.emit("break")
+        return ""
+
     def visit_func_def(self, node):
         ident_node = self._find_token(node, "identifier")
         if not ident_node: return ""
@@ -389,24 +404,19 @@ class PythonTranspiler:
         return f"{func_name}({args_str})"
 
     def visit_func_call_args(self, node):
-        """Handle function call arguments: first arg + tail args"""
         if not node or "children" not in node:
             return ""
         
-        args = []
-        # Get first argument (expression)
+        res = ""
         expr_node = self._find_child(node, "expression")
         if expr_node:
-            args.append(self.visit(expr_node))
+            res += self.visit(expr_node)
         
-        # Get remaining arguments from tail
         tail_node = self._find_child(node, "func_call_args_tail")
         if tail_node:
-            tail_args = self.visit(tail_node)
-            if tail_args:
-                args.append(tail_args)
+            res += self.visit(tail_node)
         
-        return ", ".join(filter(None, args))
+        return res
 
     def visit_func_call_args_tail(self, node):
         res = ""
@@ -430,6 +440,12 @@ class PythonTranspiler:
         ident = self._find_token(node, "identifier")
         if not ident: return ""
         var_name = ident["value"]
+        
+        data_type_node = self._find_child(node, "data_type")
+        dt_token = self._find_token(data_type_node) if data_type_node else None
+        if dt_token:
+            self.symbol_table[var_name] = dt_token["value"]
+            
         elements = self._find_child(node, "hubble_elements")
         tail = self._find_child(node, "hubble_element_tail")
         elems_str = self.visit(elements) if elements else ""
@@ -451,19 +467,17 @@ class PythonTranspiler:
         if not ident: return ""
         var_name = ident["value"]
         idx_node = self._find_child(node, "table_index")
-        idx_str = self.visit(idx_node) if idx_node else ""
+        val_node = self._find_child(node, "value")
         
-        # Check if this is an assignment or just a read
-        expr = self._find_child(node, "expression")
-        if expr:
-            # This is an assignment: arr[idx] = value
-            expr_str = self.visit(expr)
-            self.emit(f"{var_name}{idx_str} = {expr_str}")
-        else:
-            # This is a read: return the array element access
-            return f"{var_name}{idx_str}"
+        idx_val_node = self._find_child(idx_node, "index_val")
+        idx_val_str = self.visit(idx_val_node)
+        val_str = self.visit(val_node).strip()
+        
+        val_str = self._cast_lumina(var_name, val_str)
+        
+        self.emit(f"__soluna_set({var_name}, {idx_val_str}, {val_str})")
         return ""
-
+    
     def visit_table_index(self, node):
         idx_val = self._find_child(node, "index_val")
         val_str = self.visit(idx_val)
@@ -476,44 +490,20 @@ class PythonTranspiler:
         return ""
 
     def _find_child(self, node, type_name):
-        """Find first child of given type. Uses caching for performance."""
         if not node or "children" not in node: return None
-        
-        # Check cache first
-        cache_key = (id(node), type_name)
-        if cache_key in self._node_cache:
-            return self._node_cache[cache_key]
-        
-        # Linear search and cache result
-        result = None
         for child in node.get("children", []):
             if child and child.get("type") == type_name:
-                result = child
-                break
-        
-        self._node_cache[cache_key] = result
-        return result
+                return child
+        return None
 
     def _find_token(self, node, token_type=None):
-        """Find first token of given type. Uses caching for performance."""
         if not node or "children" not in node: return None
-        
-        # Check cache first
-        cache_key = (id(node), "TOKEN", token_type)
-        if cache_key in self._token_cache:
-            return self._token_cache[cache_key]
-        
-        # Linear search and cache result
-        result = None
         for child in node.get("children", []):
             if child and child.get("type") == "TOKEN":
                 if not token_type or child.get("token_type") == token_type:
-                    result = child
-                    break
-        
-        self._token_cache[cache_key] = result
-        return result
-
+                    return child
+        return None
+    
     def _has_token(self, node, value):
         if not node or "children" not in node: return False
         for child in node.get("children", []):

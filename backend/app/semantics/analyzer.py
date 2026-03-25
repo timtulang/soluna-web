@@ -138,7 +138,7 @@ class SemanticAnalyzer:
                 
                 if func_name_token:
                     func_name = func_name_token["value"]
-                    param_types = [p["type"] for p in params]
+                    param_types = [("hubble_" + p["type"] if p.get("is_hubble") else p["type"]) for p in params]
                     
                     # Check for redeclaration
                     if self.symbols.lookup(func_name):
@@ -370,42 +370,45 @@ class SemanticAnalyzer:
         """
         self.generic_visit(node)
 
-    def visit_conditional_statement(self, node):
-        """
-        Handle if-else statements: sol ... mos soluna ... mos luna ... mos
-        
-        Important: We scope each if/else block separately so variables declared
-        in the if block don't leak to the else block.
-        
-        Example:
-            sol x > 0 cos
-                kai y = 5;  (y is local to this block)
-            mos
-            luna cos
-                kai y = 10; (different y, local to this block)
-            mos
-            // y is not accessible here
-        """
+    def _visit_scoped_block(self, node):
+        """Helper to scope statements inside conditional blocks safely."""
         if not node or "children" not in node: 
             return
 
-        # Check condition doesn't end with semicolon (common syntax error)
-        statements_node = self._find_child(node, "statements")
-        self._check_no_starting_semicolon(statements_node, "Condition cannot be followed by a semicolon.")
+        # Find the block node to check for semicolon errors
+        block_node = self._find_child(node, "statements") or self._find_child(node, "loop_statements")
+        self._check_no_starting_semicolon(block_node, "Condition cannot be followed by a semicolon.")
 
         for child in node["children"]:
             if not child: 
                 continue
             
-            # When we encounter a 'statements' block, scope it
-            # The grammar structures this as: sol -> conditions -> statements -> mos
-            if child.get("type") == "statements":
+            # When we encounter a statements block, isolate it in a new scope
+            if child.get("type") in ["statements", "loop_statements"]:
                 self.symbols.enter_scope()
                 self.visit(child)
                 popped = self.symbols.exit_scope()
                 self._check_unused(popped)
             else:
                 self.visit(child)
+
+    def visit_conditional_statement(self, node):
+        self._visit_scoped_block(node)
+
+    def visit_conditional_statement_in_loop(self, node):
+        self._visit_scoped_block(node)
+
+    def visit_ifelse(self, node):
+        self._visit_scoped_block(node)
+
+    def visit_ifelse_in_loop(self, node):
+        self._visit_scoped_block(node)
+
+    def visit_else(self, node):
+        self._visit_scoped_block(node)
+
+    def visit_else_in_loop(self, node):
+        self._visit_scoped_block(node)
 
     def visit_conditions(self, node):
         """
@@ -639,7 +642,7 @@ class SemanticAnalyzer:
         
         if func_name_token:
             func_name = func_name_token["value"]
-            param_types = [p["type"] for p in params]
+            param_types = [("hubble_" + p["type"] if p.get("is_hubble") else p["type"]) for p in params]
             
             # Function should already be declared from pre-pass, but double-check
             if not self.symbols.lookup(func_name):
@@ -656,12 +659,20 @@ class SemanticAnalyzer:
         
         # Declare parameters as local variables
         for p in params:
-            self.symbols.declare(p["name"], {
-                "category": "variable",
-                "type": p["type"],
-                "is_const": False,
-                "is_initialized": True
-            }, p["line"], p["col"], is_local=True)
+            if p.get("is_hubble"):
+                self.symbols.declare(p["name"], {
+                    "category": "table",
+                    "type": "hubble",
+                    "element_type": p["type"],
+                    "is_initialized": True
+                }, p["line"], p["col"], is_local=True)
+            else:
+                self.symbols.declare(p["name"], {
+                    "category": "variable",
+                    "type": p["type"],
+                    "is_const": False,
+                    "is_initialized": True
+                }, p["line"], p["col"], is_local=True)
         
         # Analyze function body
         statements = self._find_child(func_def, "statements")
@@ -741,6 +752,7 @@ class SemanticAnalyzer:
         if not node: return
         param_node = self._find_child(node, "param")
         if param_node:
+            is_hubble = self._has_token(param_node, "hubble")
             type_node = self._find_child(param_node, "data_type")
             p_type = self._extract_type_name(type_node)
             ident = self._find_token(param_node, "identifier")
@@ -748,6 +760,7 @@ class SemanticAnalyzer:
                 param_list.append({
                     "name": ident["value"],
                     "type": p_type,
+                    "is_hubble": is_hubble,
                     "line": ident["line"],
                     "col": ident["col"]
                 })
@@ -1202,7 +1215,6 @@ class SemanticAnalyzer:
         
         Parse trees are nested structures. This helper finds the first child
         with a specific type, returning None if not found.
-        Performance: Uses caching to avoid repeated lookups.
         
         Analogy: Think of the parse tree as a file system, and this looks for
         the first folder of a given name in the current folder.
@@ -1220,21 +1232,10 @@ class SemanticAnalyzer:
             If not found: expr is None
         """
         if not node or "children" not in node: return None
-        
-        # Check cache first
-        cache_key = (id(node), type_name)
-        if cache_key in self._node_cache:
-            return self._node_cache[cache_key]
-        
-        # Linear search and cache result
-        result = None
         for child in node.get("children", []):
             if child and child.get("type") == type_name:
-                result = child
-                break
-        
-        self._node_cache[cache_key] = result
-        return result
+                return child
+        return None
 
     def _find_token(self, node, token_type):
         """
@@ -1242,7 +1243,6 @@ class SemanticAnalyzer:
         
         Tokens are leaf nodes from the lexer: identifiers, keywords, operators, etc.
         This looks for the first token of a given type.
-        Performance: Uses caching to avoid repeated lookups.
         
         Args:
             node: A parse tree node
@@ -1257,22 +1257,11 @@ class SemanticAnalyzer:
             If found: ident_token["value"] is the variable name
         """
         if not node or "children" not in node: return None
-        
-        # Check cache first
-        cache_key = (id(node), token_type)
-        if cache_key in self._token_cache:
-            return self._token_cache[cache_key]
-        
-        # Linear search and cache result
-        result = None
         for child in node.get("children", []):
             if child and child.get("type") == "TOKEN" and child.get("token_type") == token_type:
-                result = child
-                break
-        
-        self._token_cache[cache_key] = result
-        return result
-
+                return child
+        return None
+    
     def _has_token(self, node, token_type):
         """
         Quick check: does this node contain a token of this type?
@@ -1492,6 +1481,8 @@ class SemanticAnalyzer:
                 # Variables must be initialized before use
                 if sym.get("category") == "variable" and not sym.get("is_initialized", False):
                     raise SemanticError(f"Variable '{node.get('value')}' is uninitialized and cannot be used.", node.get('line'), node.get('col'))
+                elif sym.get("category") == "table":
+                    types.add("hubble_" + sym.get("element_type", "unknown"))
                 else:
                     types.add(sym.get("type", sym.get("return_type", "unknown")))
                     

@@ -38,9 +38,10 @@ class ParseTreeBuilder:
     """
     
     def __init__(self, parser, tokens):
-        self.parser = parser  # The Earley parser (has the chart)
-        self.tokens = tokens  # The original input tokens
-        self.chart = parser.chart  # The parse chart (built during parsing)
+        self.parser = parser  
+        self.tokens = tokens  
+        self.chart = parser.chart  
+        self._memo = {}
 
     def build(self):
         """
@@ -135,35 +136,31 @@ class ParseTreeBuilder:
         Returns:
             List of child nodes (one for each symbol), or None if no valid split exists
         """
-        # BASE CASE: No more symbols to match
         if not symbols:
-            # Success! Only if we've consumed all input
             return [] if start_index == end_index else None
 
-        # RECURSIVE CASE: Work backwards (last symbol first)
-        # This is more efficient than working forwards
-        current_sym = symbols[-1]  # The LAST symbol in the rule
-        remaining_syms = symbols[:-1]  # All symbols except the last
+        memo_key = (tuple(symbols), start_index, end_index)
+        if memo_key in self._memo:
+            return self._memo[memo_key]
 
-        # Try every possible position where the last symbol could start
-        # Work backwards from end_index
+        current_sym = symbols[-1]  
+        remaining_syms = symbols[:-1]  
+
+        result = None
+
         for split_point in range(end_index, start_index - 1, -1):
             
-            # 1. Try to match the last symbol from split_point to end_index
             node = self._match_symbol(current_sym, split_point, end_index)
             
             if node is not None:
-                # 2. If it matched, recursively try to match the remaining symbols
-                # in the span (start_index...split_point)
                 prefix_nodes = self._find_children(remaining_syms, start_index, split_point)
                 
                 if prefix_nodes is not None:
-                    # Success! We found a valid split
-                    # Combine the prefix and current symbol
-                    return prefix_nodes + [node]
+                    result = prefix_nodes + [node]
+                    break
 
-        # No valid split found
-        return None
+        self._memo[memo_key] = result
+        return result
 
     def _match_symbol(self, symbol, start, end):
         """

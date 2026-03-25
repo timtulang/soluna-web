@@ -1,9 +1,7 @@
-\\\ DAY 3, Problem 4B: Sort array in ascending or descending order
-
-flux bubbleSort(hubble kai arr, kai size, kai order) {
-    \\\ order: 1 for ascending, 2 for descending
-    phase kai i = 0, size, 1
-        phase kai j = 0, size - i - 1, 1
+void bubbleSort(hubble kai arr, kai size, kai order)
+    phase kai i = 1, (size + 1), 1 cos
+        kai size2 = size - i + 1; 
+        phase kai j = 1, size2, 1 cos
             sol (order == 1 && arr[j] > arr[j + 1]) || (order == 2 && arr[j] < arr[j + 1])
                 kai temp = arr[j];
                 arr[j] = arr[j + 1];
@@ -11,23 +9,25 @@ flux bubbleSort(hubble kai arr, kai size, kai order) {
             mos
         mos
     mos
-    return void;
-}
+    zara;
+mos
 
-flux printArray(hubble kai arr, kai size) {
-    phase kai i = 0, size, 1
+void printArray(hubble kai arr, kai size)
+    \\ Removed size += 1;
+    phase kai i = 1, (size + 1), 1 cos
         lumen(arr[i] .. " ");
     mos
     nova("");
-    return void;
-}
+    zara;
+mos
 
 nova("=== Array Sorting ===");
 nova("Input the number of elements:");
 kai n = lumina();
 
 hubble kai arr = {};
-phase kai i = 0, n, 1
+
+phase kai i = 1, (n + 1), 1 cos
     nova("element - " .. i .. " : ");
     arr[i] = lumina();
 mos
@@ -42,5 +42,3 @@ bubbleSort(arr, n, choice);
 
 nova("Sorted array: ");
 printArray(arr, n);
-
-return void;

@@ -1,30 +1,23 @@
-\\\ DAY 3, Problem 2: Area calculations with separate functions
+flux circleArea(flux radius)
+    flux area = 3.14 * (radius ^ 2);
+    zara area;
+mos
 
-flux circleArea(kai radius) {
-    \\\ Area = PI * r^2
-    let area = 314 * radius * radius / 100;
-    return area;
-}
+flux triangleArea(flux base, flux height)
+    flux area = (base * height) / 2.0;
+    zara area;
+mos
 
-flux triangleArea(kai base, kai height) {
-    \\\ Area = (base * height) / 2
-    let area = base * height / 2;
-    return area;
-}
+flux squareArea(flux side)
+    flux area = side * side;
+    zara area;
+mos
 
-flux squareArea(kai side) {
-    \\\ Area = side * side
-    let area = side * side;
-    return area;
-}
+flux rectangleArea(flux length, flux width)
+    flux area = length * width;
+    zara area;
+mos
 
-flux rectangleArea(kai length, kai width) {
-    \\\ Area = length * width
-    let area = length * width;
-    return area;
-}
-
-\\\ Main program
 nova("=== Area Calculator with Functions ===");
 nova("Menu:");
 nova("1. Area of Circle");
@@ -34,36 +27,72 @@ nova("4. Area of Rectangle");
 nova("Choose shape (1-4):");
 kai choice = lumina();
 
+orbit choice < 1 || choice > 4 cos
+    nova("Invalid choice! Please enter a number between 1 and 4:");
+    choice = lumina();
+mos
+
 sol choice == 1
     nova("Enter radius:");
-    kai radius = lumina();
-    kai result = circleArea(radius);
+    flux radius = lumina();
+    
+    orbit radius <= 0 cos
+        nova("Radius must be greater than 0. Enter radius:");
+        radius = lumina();
+    mos
+    
+    flux result = circleArea(radius);
     nova("Area of circle: " .. result);
 mos
 soluna choice == 2
     nova("Enter base:");
-    kai base = lumina();
+    flux base = lumina();
+    
+    orbit base <= 0 cos
+        nova("Base must be greater than 0. Enter base:");
+        base = lumina();
+    mos
+    
     nova("Enter height:");
-    kai height = lumina();
-    kai result = triangleArea(base, height);
+    flux height = lumina();
+    
+    orbit height <= 0 cos
+        nova("Height must be greater than 0. Enter height:");
+        height = lumina();
+    mos
+    
+    flux result = triangleArea(base, height);
     nova("Area of triangle: " .. result);
 mos
 soluna choice == 3
     nova("Enter side:");
-    kai side = lumina();
-    kai result = squareArea(side);
+    flux side = lumina();
+    
+    orbit side <= 0 cos
+        nova("Side must be greater than 0. Enter side:");
+        side = lumina();
+    mos
+    
+    flux result = squareArea(side);
     nova("Area of square: " .. result);
 mos
 soluna choice == 4
     nova("Enter length:");
-    kai length = lumina();
+    flux length = lumina();
+    
+    orbit length <= 0 cos
+        nova("Length must be greater than 0. Enter length:");
+        length = lumina();
+    mos
+    
     nova("Enter width:");
-    kai width = lumina();
-    kai result = rectangleArea(length, width);
+    flux width = lumina();
+    
+    orbit width <= 0 cos
+        nova("Width must be greater than 0. Enter width:");
+        width = lumina();
+    mos
+    
+    flux result = rectangleArea(length, width);
     nova("Area of rectangle: " .. result);
 mos
-luna
-    nova("Invalid Input!");
-mos
-
-return void;

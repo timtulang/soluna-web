@@ -44,8 +44,8 @@ let decimalToHex(kai num)
     mos
     
     orbit num > 0 cos
-        kai remainder = num % 16;
-        blaze hexChar = hexChars[remainder + 1];
+        kai remainder = (num % 16);
+        blaze hexChar = hexChars[remainder];
         let hexStr = "" .. hexChar;
         hexadecimal = hexStr .. hexadecimal;
         num = num // 16;

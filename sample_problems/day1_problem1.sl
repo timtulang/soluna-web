@@ -2,16 +2,16 @@
 
 nova("=== Arithmetic Operations ===");
 nova("Enter first number:");
-kai num1 = lumina();
+flux num1 = lumina();
 
 nova("Enter second number:");
-kai num2 = lumina();
+flux num2 = lumina();
 
 \\ Calculate operations
-kai sum = num1 + num2;
-kai difference = num1 - num2;
-kai product = num1 * num2;
-kai quotient = num1 / num2;
+flux sum = num1 + num2;
+flux difference = num1 - num2;
+flux product = num1 * num2;
+flux quotient = num1 / num2;
 
 \\ Display results
 nova("========== RESULTS ==========");
