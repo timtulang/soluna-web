@@ -19,7 +19,7 @@ class PythonTranspiler:
             "            if len(val.lstrip('-')) > 15:",
             "                raise ValueError",
             "            return int(val)",
-            "        if expected_type in ['flux', 'selene']:",
+            "        if expected_type == 'flux':",
             "            parts = val.lstrip('-').split('.')",
             "            if len(parts[0]) > 15 or (len(parts) == 2 and len(parts[1]) > 8) or len(parts) > 2:",
             "                raise ValueError",
@@ -35,7 +35,7 @@ class PythonTranspiler:
             "def __soluna_index(idx):",
             "    if idx < 1:",
             "        raise RuntimeError(f\"Runtime Error: list index out of range\")",
-            "    return idx + 1",
+            "    return idx",
             "",
             "def __soluna_set(arr, idx, val):",
             "    actual_idx = __soluna_index(idx) - 1",
@@ -84,7 +84,7 @@ class PythonTranspiler:
             return f"int({base_val})"
         
         # Cast to float for flux/selene (float) types
-        if var_type in ["flux", "selene"]:
+        if var_type == "flux":
             return f"float({base_val})"
         
         # Otherwise return as-is

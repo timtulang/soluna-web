@@ -265,7 +265,7 @@ class SemanticAnalyzer:
             True if coercion is allowed, False otherwise
         """
         # Rule 1: String type is flexible, same types are ok, unknown is ok
-        if target == 'let' or target == source or source == 'zeru': 
+        if target == 'let' or source == 'let' or target == source or source == 'zeru': 
             return True
 
         # Rule 2: Narrowing from double requires static value check
@@ -1439,6 +1439,16 @@ class SemanticAnalyzer:
                 sym = self.symbols.lookup(ident["value"])
                 if sym: types.add(sym.get("type", sym.get("return_type", "unknown")))
             return types 
+        
+        if node_type == "string_or_table_len":
+            ident = self._find_token(node, "identifier")
+            if ident:
+                sym = self.symbols.lookup(ident["value"])
+                if not sym:
+                    raise SemanticError(f"Undefined variable '{ident['value']}' used with '#' operator.", ident["line"], ident["col"])
+                if sym.get("category") == "variable" and not sym.get("is_initialized", False):
+                    raise SemanticError(f"Variable '{ident['value']}' is uninitialized.", ident["line"], ident["col"])
+            return {"kai"}
             
         # Handle indexing: when identifier is followed by identifier_tail with table_index
         if node_type == "factor_value":
