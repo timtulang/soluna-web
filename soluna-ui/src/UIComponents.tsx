@@ -18,7 +18,10 @@ export const TopMenuBar = ({
       {menuOpen === 'file' && (
         <div className="absolute top-full left-0 mt-1 w-48 bg-zinc-900 border border-zinc-800 shadow-2xl py-1 z-50 rounded-none">
           <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={handleAddFile}>New File</button>
-          <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={openFile}>Open File...</button>
+          
+          {/* TEMPORARILY DISABLED: File Upload */}
+          {/* <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={openFile}>Open File...</button> */}
+          
           <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={handleSaveFile}>Save File</button>
           <div className="h-px bg-zinc-800 my-1"></div>
           <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={() => window.location.reload()}>Exit</button>
@@ -34,7 +37,10 @@ export const TopMenuBar = ({
         <IconPlay /> Run
       </button>
     </div>
-    <input type="file" ref={fileInputRef} onChange={handleFileRead} className="hidden" />
+    
+    {/* TEMPORARILY DISABLED: File Upload */}
+    {/* <input type="file" ref={fileInputRef} onChange={handleFileRead} className="hidden" /> */}
+    
     <div className="flex-1"></div>
     <div className="text-[11px] text-zinc-600 font-mono">SOLUNA DEV ENVIRONMENT</div>
   </div>

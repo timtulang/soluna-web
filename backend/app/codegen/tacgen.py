@@ -279,6 +279,34 @@ class TACGenerator:
         tail_node = self._find_child(node, "expr_tail")
         return self._flatten_and_build_expr(first_operand, tail_node)
 
+    def visit_expression(self, node):
+        """
+        Handle expression nodes - delegate to the appropriate sub-expression visitor.
+        
+        An expression can be one of two forms:
+        - simple_expr: a straightforward operand chain (a + b * c)
+        - multi_expr:  an expression with a leading unary operator (-(a + b))
+        
+        Steps:
+        1. Check for a simple_expr child and delegate to visit_simple_expr
+        2. Otherwise check for a multi_expr child and delegate to visit_multi_expr
+        3. Fall back to generic_visit if neither is present
+        """
+        if not node or "children" not in node:
+            return ""
+
+        # Check for simple_expr or multi_expr
+        simple_expr = self._find_child(node, "simple_expr")
+        if simple_expr:
+            return self.visit(simple_expr)
+
+        multi_expr = self._find_child(node, "multi_expr")
+        if multi_expr:
+            return self.visit(multi_expr)
+
+        # Fallback: process all children
+        return self.generic_visit(node)
+
     def visit_unary_negation(self, node):
         """
         Handle unary negation: ! (logical NOT) and - (arithmetic negation)
@@ -338,26 +366,44 @@ class TACGenerator:
 
     def visit_assignment_statement(self, node):
         """
-        Handle assignment: x = 5; or x += 3;
+        Handle assignment: x = 5; or x += 3; or arr[i] = value;
         
-        Two cases:
-        1. Regular assignment (x = value)
-           - Simply: x = value
+        Four cases, checked in order:
         
-        2. Compound assignment (x += value, x -= value, etc.)
+        1. Table navigation (arr[i] = value)
+           - Delegate entirely to visit_table_nav
+        
+        2. Regular assignment (x = value, or arr[i] = value via identifier_tail)
+           - Simple "=": emit x = value directly
+        
+        3. Compound assignment (x += value, x -= value, etc.)
            - Break into two TAC instructions:
              temp = x op value
              x = temp
            - This standardizes compound operators to basic three-address form
         
-        3. Unary operators (++, --)
+        4. Unary operators (++, --)
            - x++ becomes: temp = x + 1; x = temp
            - x-- becomes: temp = x - 1; x = temp
+        
+        The identifier_tail handles subscript access (e.g. arr[i]) so the full
+        target (full_var_name) is used consistently across all assignment forms.
         """
+        # Handle table navigation (array element assignment)
+        table_nav = self._find_child(node, "table_nav")
+        if table_nav:
+            self.visit_table_nav(table_nav)
+            return ""
+
         ident_node = self._find_token(node, "identifier")
         if not ident_node: return ""
         var_name = ident_node["value"]
-        
+
+        # Handle identifier tail (e.g., array subscript access: arr[i])
+        tail_node = self._find_child(node, "identifier_tail")
+        tail_str = self.visit(tail_node) if tail_node else ""
+        full_var_name = f"{var_name}{tail_str}"
+
         assign_val = self._find_child(node, "assignment_value")
         unary_op = self._find_child(node, "unary_op")
         
@@ -368,20 +414,20 @@ class TACGenerator:
             val_temp = self.visit(val_node)
             
             if op == "=":
-                self.emit(f"{var_name} = {val_temp}")
+                self.emit(f"{full_var_name} = {val_temp}")
             else:
-                base_op = op[0] # e.g., '+=' becomes '+'
+                base_op = op[0]  # e.g., '+=' becomes '+'
                 temp = self.new_temp()
-                self.emit(f"{temp} = {var_name} {base_op} {val_temp}")
-                self.emit(f"{var_name} = {temp}")
+                self.emit(f"{temp} = {full_var_name} {base_op} {val_temp}")
+                self.emit(f"{full_var_name} = {temp}")
                 
         elif unary_op:
             op_token = self._find_token(unary_op)
             if op_token:
                 temp = self.new_temp()
                 op = "+" if op_token["value"] == "++" else "-"
-                self.emit(f"{temp} = {var_name} {op} 1")
-                self.emit(f"{var_name} = {temp}")
+                self.emit(f"{temp} = {full_var_name} {op} 1")
+                self.emit(f"{full_var_name} = {temp}")
         return ""
 
     def visit_output_statement(self, node):
@@ -655,6 +701,17 @@ class TACGenerator:
         self.emit(f"goto {l_start}")
         
         self.emit(f"{l_end}:")
+        return ""
+
+    def visit_break_statements(self, node):
+        """
+        Handle break statements inside loops.
+        
+        Emits a TAC 'break' instruction which signals an immediate exit
+        from the enclosing loop. The TAC interpreter/backend is responsible
+        for resolving this to the appropriate goto <loop_end> jump.
+        """
+        self.emit("break")
         return ""
 
     # --- Functions ---
