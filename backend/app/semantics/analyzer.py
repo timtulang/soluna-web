@@ -1177,12 +1177,15 @@ class SemanticAnalyzer:
             
             # If this is an assignment: arr[0] = value
             if self._has_token(node, "="):
-                expr_node = self._find_child(node, "expression")
-                if expr_node:
-                    expr_type = self._get_expression_type(expr_node)
-                    elem_type = sym.get("element_type", "unknown")
-                    if not self._check_coercion(elem_type, expr_type, expr_node):
-                        raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
+                # FIX: Look inside the 'value' wrapper to find the expression
+                val_node = self._find_child(node, "value")
+                if val_node:
+                    expr_node = self._find_child(val_node, "expression")
+                    if expr_node:
+                        expr_type = self._get_expression_type(expr_node)
+                        elem_type = sym.get("element_type", "unknown")
+                        if not self._check_coercion(elem_type, expr_type, expr_node):
+                            raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
                     
     def _visit_table_navs_in_expr(self, node):
         """
@@ -1824,6 +1827,18 @@ class SemanticAnalyzer:
                     raise SemanticError(f"Undefined variable '{ident['value']}' used as index.", ident["line"], ident["col"])
                 if idx_sym.get("category") == "variable" and not idx_sym.get("is_initialized", False):
                     raise SemanticError(f"Variable '{ident['value']}' used as index is uninitialized.", ident["line"], ident["col"])
+            
+            # 3. Handle complex expression indices (like i + 1)
+            expr_node = self._find_child(node, "expression")
+            if expr_node:
+                expr_type = self._get_expression_type(expr_node)
+                # Tables (except 'let') require numeric 'kai' indices
+                if table_sym and table_sym.get("element_type") != "let":
+                    if expr_type not in ['kai', 'unknown']:
+                        first_token = self._find_token_in_tree(expr_node)
+                        line = first_token["line"] if first_token else 0
+                        col = first_token["col"] if first_token else 0
+                        raise SemanticError(f"Table index must evaluate to 'kai', got '{expr_type}'.", line, col)
         
         if "children" in node:
             for child in node["children"]:
@@ -1888,6 +1903,16 @@ class SemanticAnalyzer:
                     raise SemanticError(f"Undefined variable '{ident['value']}' used as string index.", ident["line"], ident["col"])
                 if idx_sym.get("category") == "variable" and not idx_sym.get("is_initialized", False):
                     raise SemanticError(f"Variable '{ident['value']}' used as string index is uninitialized.", ident["line"], ident["col"])
+                    
+            # 3. Handle complex expression indices (like i + 1)
+            expr_node = self._find_child(node, "expression")
+            if expr_node:
+                expr_type = self._get_expression_type(expr_node)
+                if expr_type not in ['kai', 'unknown']:
+                    first_token = self._find_token_in_tree(expr_node)
+                    line = first_token["line"] if first_token else 0
+                    col = first_token["col"] if first_token else 0
+                    raise SemanticError(f"String index must evaluate to 'kai', got '{expr_type}'.", line, col)
         
         if "children" in node:
             for child in node["children"]:
