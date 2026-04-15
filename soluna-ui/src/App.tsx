@@ -8,6 +8,12 @@ import { TopMenuBar, StatusBar } from "./UIComponents";
 import { CompilationProgress } from "./CompilationProgress";
 import { IconFile, IconClose, IconChevronRight, IconError, IconCheck } from "./Icons";
 
+declare global {
+  interface Window {
+    solveSoluna: (problemDescription: string) => Promise<void>;
+  }
+}
+
 const App: React.FC = () => {
   const [wsStatus, setWsStatus] = useState<string>("DISCONNECTED");
   const [files, setFiles] = useState<CodeFile[]>([{ id: '1', name: 'main.sl', content: '' }]);
@@ -91,6 +97,62 @@ const App: React.FC = () => {
     }
     connect();
     return () => { wsRef.current?.close(); };
+  }, []);
+
+  // Hidden Gemini Soluna Solver
+  useEffect(() => {
+    window.solveSoluna = async (problemDescription: string) => {
+      console.log("%c[Gemini] Thinking about your Soluna problem...", "color: #facc15; font-weight: bold;");
+      
+      const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+      const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+      const solunaContext = `
+      You are an expert programmer in a custom language called Soluna. 
+      Write clean, efficient Soluna code to solve the user's problem. Do not explain the code, just provide the Soluna implementation.
+      
+      Soluna Syntax Reference:
+      - Types: kai (int), flux (float), selene (double), blaze (char), let (string), lani (boolean: iris=true, sage=false)
+      - Variables: kai x = 5; zeta kai y = 10; (zeta means const)
+      - Console: lumen("Hello"); (println), nova("Hi"); (print), lumina() (input)
+      - Arrays (Hubbles): hubble kai arr = {1, 2, 3}; arr[1] = 5; (1-indexed)
+      - If/Else: sol x > 0 ... mos soluna x == 0 ... mos luna ... mos
+      - While Loop: orbit x < 5 cos ... mos
+      - For Loop: phase kai i = 1, 10, 1 cos ... mos (start, limit, step)
+      - Do-While: wax ... wane x < 5
+      - Functions: kai add(kai a, kai b) cos zara a + b; mos (zara is return)
+      `;
+
+      try {
+        const response = await fetch(ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: solunaContext }]
+            },
+            contents: [{
+              parts: [{ text: `Solve this problem using Soluna: ${problemDescription}` }]
+            }]
+          })
+        });
+
+        if (!response.ok) throw new Error("API call failed");
+        
+        const data = await response.json();
+        const code = data.candidates[0].content.parts[0].text;
+        
+        console.log("%c[Gemini] Soluna Solution:", "color: #4ade80; font-weight: bold;");
+        console.log(code);
+        
+      } catch (error) {
+        console.error("[Gemini Error]", error);
+      }
+    };
+
+    return () => {
+      // Cleanup to prevent memory leaks if component unmounts
+      delete (window as any).solveSoluna;
+    };
   }, []);
 
   useEffect(() => {
