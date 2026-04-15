@@ -212,15 +212,9 @@ class SemanticAnalyzer:
                 raise SemanticError(f"Constant variable '{var_name}' cannot be initialized with runtime input 'lumina()'.", line, col)
 
             if declared_type == 'let':
-                if val_node:
-                    if is_lumina:
-                        final_type = 'let'
-                    else:
-                        final_type = self._get_expression_type(val_node)
-                        static_val = self._evaluate_static_string(val_node)
-                        if final_type == 'unknown': final_type = 'zeru' 
-                else:
-                    final_type = 'zeru'
+                final_type = 'let'
+                if val_node and not is_lumina:
+                    static_val = self._evaluate_static_string(val_node)
             elif val_node and not is_lumina:
                 expr_type = self._get_expression_type(val_node)
                 static_val = self._evaluate_static_string(val_node)
@@ -232,7 +226,7 @@ class SemanticAnalyzer:
                 "type": final_type,
                 "is_const": is_const,
                 "static_value": static_val,
-                "is_initialized": val_node is not None or is_lumina # NEW
+                "is_initialized": val_node is not None or is_lumina
             }, line, col, is_local=is_local)
 
     # ==========================================
@@ -968,7 +962,7 @@ class SemanticAnalyzer:
            - ".." (string concatenation) → selene (string)
            - Comparison operators (==, !=, <, >, <=, >=) → lani (bool)
         3. Determine the "highest" type (type hierarchy):
-           - flux (float) > kai (int)
+           - let (dynamic) > flux (float) > kai (int)
            - selene (double) > others
            - Other types as found
         4. Return that type
@@ -1002,7 +996,9 @@ class SemanticAnalyzer:
         # Special case: Comparisons always return bool
         if self._has_any_token_recursive(node, ['==', '!=', '<', '>', '<=', '>=']): return 'lani'
         
-        # Determine highest type: flux > kai (float > int)
+        # Determine highest type: let > flux > kai (float > int)
+        # If a dynamic 'let' variable is involved, the whole expression defers to runtime
+        if 'let' in types_in_expr: return 'let'
         if 'flux' in types_in_expr: return 'flux'
         if 'kai' in types_in_expr: return 'kai'
         if 'selene' in types_in_expr: return 'selene'
