@@ -12,6 +12,16 @@ class PythonTranspiler:
 
     def generate(self, tree):
         preamble = [
+            "class __SolunaList(list):",
+            "    def __setitem__(self, key, value):",
+            "        if key >= len(self):",
+            "            self.extend([0] * (key - len(self) + 1))",
+            "        super().__setitem__(key, value)",
+            "    def __getitem__(self, key):",
+            "        if key >= len(self):",
+            "            self.extend([0] * (key - len(self) + 1))",
+            "        return super().__getitem__(key)",
+            "",
             "def __soluna_input(expected_type):",
             "    val = input().strip()",
             "    try:",
@@ -39,8 +49,6 @@ class PythonTranspiler:
             "",
             "def __soluna_set(arr, idx, val):",
             "    actual_idx = __soluna_index(idx) - 1",
-            "    if actual_idx >= len(arr):",
-            "        arr.extend([0] * (actual_idx - len(arr) + 1))",
             "    arr[actual_idx] = val",
             "",
         ]
@@ -457,7 +465,10 @@ class PythonTranspiler:
         tail = self._find_child(node, "hubble_element_tail")
         elems_str = self.visit(elements) if elements else ""
         tail_str = self.visit(tail) if tail else ""
-        self.emit(f"{var_name} = [{elems_str}{tail_str}]")
+        
+        # Instantiate the custom dynamic list instead of []
+        self.emit(f"{var_name} = __SolunaList([{elems_str}{tail_str}])")
+        return ""
         return ""
 
     def visit_hubble_element_tail(self, node):

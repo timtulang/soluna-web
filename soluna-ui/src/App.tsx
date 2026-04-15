@@ -99,11 +99,8 @@ const App: React.FC = () => {
     return () => { wsRef.current?.close(); };
   }, []);
 
-  // Hidden Gemini Soluna Solver
   useEffect(() => {
-    window.solveSoluna = async (problemDescription: string) => {
-      console.log("%c[Gemini] Thinking about your Soluna problem...", "color: #facc15; font-weight: bold;");
-      
+    window.solveSoluna = async (problemDescription: string) => {      
       const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
       const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
       const solunaContext = `

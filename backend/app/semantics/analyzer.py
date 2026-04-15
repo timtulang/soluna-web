@@ -252,25 +252,17 @@ class SemanticAnalyzer:
         - 'let' (string) is flexible: accepts any type
         - Same types are always compatible
         - 'zeru' (unknown) is assumed compatible for inference
-        - 'selene' (double) → 'kai'/'flux' requires static value check
+        - 'selene' (string) and 'blaze' (char) can coerce to 'kai'/'flux'.
+          If static, we validate. If dynamic, we pass and let runtime handle it.
         - 'kai' (int) can become 'flux'/'lani', or vice versa
         - 'lani' (bool) is flexible
-        
-        Args:
-            target: The type we're assigning TO (e.g., "kai")
-            source: The type we're assigning FROM (e.g., "flux")
-            expr_node: Optional - the actual expression for static value checking
-        
-        Returns:
-            True if coercion is allowed, False otherwise
         """
         # Rule 1: String type is flexible, same types are ok, unknown is ok
         if target == 'let' or source == 'let' or target == source or source == 'zeru': 
             return True
 
-        # Rule 2: Narrowing from double requires static value check
-        # (Can't safely narrow double to int/float at runtime)
-        if target in ['kai', 'flux'] and source == 'selene':
+        # Rule 2: Narrowing from string or char to number
+        if target in ['kai', 'flux'] and source in ['selene', 'blaze']:
             if expr_node:
                 val_str = self._evaluate_static_string(expr_node)
                 if val_str is not None:
@@ -282,16 +274,19 @@ class SemanticAnalyzer:
                         return True
                     except ValueError:
                         return False
-            return False
+            # If it is a runtime variable (like string[i]), allow it to pass semantic analysis
+            return True
 
         # Rule 3: Int and Float are interchangeable
         if target == 'kai' and source in ['flux', 'lani']: 
             return True
         if target == 'flux' and source in ['kai', 'lani']: 
             return True
+        
         # Rule 4: Bool is flexible
         if target == 'lani': 
             return True 
+            
         # No other coercions allowed
         return False
 
