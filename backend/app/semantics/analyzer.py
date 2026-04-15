@@ -444,26 +444,34 @@ class SemanticAnalyzer:
         Scopes the loop body so loop variables don't leak out.
         Tracks that we're inside a loop (validates 'break' statements).
         """
-        # Mark: we're entering a loop
         self.symbols.enter_loop()
-        # Mark: create new scope for loop variables
         self.symbols.enter_scope()
-        # Visit the loop body
+        
+        cond_node = self._find_child(node, "conditions")
+        body_node = self._find_child(node, "loop_statements")
+        wax_token = self._find_token(node, "wax")
+        line = wax_token["line"] if wax_token else 0
+        col = wax_token["col"] if wax_token else 0
+        
+        self._check_infinite_loop(cond_node, body_node, line, col)
+        
         self.generic_visit(node)
-        # Check for unused variables in loop scope
         popped = self.symbols.exit_scope()
         self._check_unused(popped)
-        # Mark: we're exiting the loop
         self.symbols.exit_loop()
 
     def visit_loop_while_statement(self, node):
-        """
-        Handle while loop: orbit condition cos ... mos
-        
-        Scopes the loop body and tracks loop context.
-        """
         self.symbols.enter_loop()
         self.symbols.enter_scope()
+        
+        cond_node = self._find_child(node, "conditions")
+        body_node = self._find_child(node, "loop_statements")
+        orbit_token = self._find_token(node, "orbit")
+        line = orbit_token["line"] if orbit_token else 0
+        col = orbit_token["col"] if orbit_token else 0
+        
+        self._check_infinite_loop(cond_node, body_node, line, col)
+        
         self.generic_visit(node)
         popped = self.symbols.exit_scope()
         self._check_unused(popped)
@@ -515,6 +523,14 @@ class SemanticAnalyzer:
                     step_type = self._get_expression_type(step_expr)
                     if step_type not in ['kai', 'unknown']:
                         raise SemanticError(f"For loop step must evaluate to 'kai', got '{step_type}'.", 0, 0)
+                        
+                    # NEW: Static check to prevent step of 0
+                    static_step = self._evaluate_static_string(step_expr)
+                    if static_step == "0":
+                        step_token = self._find_token_in_tree(step_expr)
+                        line = step_token["line"] if step_token else 0
+                        col = step_token["col"] if step_token else 0
+                        raise SemanticError("For loop step cannot be 0.", line, col)
 
         # Scope 2: Loop body scope (inner variables like sum)
         loop_statements = self._find_child(node, "loop_statements")
@@ -1876,3 +1892,58 @@ class SemanticAnalyzer:
         if "children" in node:
             for child in node["children"]:
                 self._validate_string_indices(child, string_sym)
+    
+    def _check_infinite_loop(self, cond_node, body_node, line, col):
+        has_break = self._has_token_recursive(body_node, "warp")
+        if has_break:
+            return
+            
+        is_literal_true = self._has_token_recursive(cond_node, "iris")
+        cond_vars = self._extract_identifiers(cond_node)
+        
+        if is_literal_true and not cond_vars:
+            raise SemanticError("Infinite loop detected: condition is always true and no 'warp' statement exists.", line, col)
+            
+        if cond_vars:
+            vars_modified = False
+            for var in cond_vars:
+                if self._is_modified_in_tree(var, body_node):
+                    vars_modified = True
+                    break
+                    
+            if not vars_modified:
+                vars_str = ", ".join(cond_vars)
+                raise SemanticError(f"Infinite loop detected: condition variables ({vars_str}) are never modified inside the loop.", line, col)
+
+    def _extract_identifiers(self, node):
+        identifiers = set()
+        if not node: return identifiers
+        
+        if node.get("type") == "TOKEN" and node.get("token_type") == "identifier":
+            identifiers.add(node.get("value"))
+            
+        if "children" in node:
+            for child in node["children"]:
+                identifiers.update(self._extract_identifiers(child))
+        return identifiers
+
+    def _is_modified_in_tree(self, var_name, node):
+        if not node: return False
+        
+        node_type = node.get("type")
+        
+        if node_type == "assignment_statement":
+            ident = self._find_token(node, "identifier")
+            if ident and ident.get("value") == var_name:
+                return True
+                
+        if node_type == "for_start":
+            ident = self._find_token(node, "identifier")
+            if ident and ident.get("value") == var_name:
+                return True
+                
+        if "children" in node:
+            for child in node["children"]:
+                if self._is_modified_in_tree(var_name, child):
+                    return True
+        return False

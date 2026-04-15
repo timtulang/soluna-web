@@ -209,22 +209,29 @@ class PythonTranspiler:
         ident_node = self._find_token(node, "identifier")
         if not ident_node: return ""
         var_name = ident_node["value"]
+        
+        tail_node = self._find_child(node, "identifier_tail")
+        tail_str = self.visit(tail_node) if tail_node else ""
+        full_var_name = f"{var_name}{tail_str}"
+
         assign_val = self._find_child(node, "assignment_value")
         unary_op = self._find_child(node, "unary_op")
+        
         if assign_val:
             op_node = self._find_child(assign_val, "assignment_op")
             op = self.visit(op_node).strip() if op_node else "="
             val_node = self._find_child(assign_val, "value")
             val_str = self.visit(val_node).strip()
             val_str = self._cast_lumina(var_name, val_str)
-            self.emit(f"{var_name} {op} {val_str}")
+            self.emit(f"{full_var_name} {op} {val_str}")
         elif unary_op:
             op_token = self._find_token(unary_op)
             if op_token:
                 if op_token["value"] == "++":
-                    self.emit(f"{var_name} += 1")
+                    self.emit(f"{full_var_name} += 1")
                 elif op_token["value"] == "--":
-                    self.emit(f"{var_name} -= 1")
+                    self.emit(f"{full_var_name} -= 1")
+        return ""
         return ""
 
     def visit_output_statement(self, node):
