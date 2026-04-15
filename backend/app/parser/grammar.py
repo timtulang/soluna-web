@@ -129,8 +129,9 @@ SOLUNA_GRAMMAR = {
     # 5. VALUES & EXPRESSIONS: What can appear on the right side of =
     # ========================================================================
     'value': [
-        Production('value', ['expression']),           # Any expression like "x + y"
-        Production('value', ['lumina', '(', ')'])      # User input function
+        Production('value', ['expression']),           
+        Production('value', ['lumina', '(', ')']),     
+        Production('value', ['spark', '(', ')'])       # <-- Add this line
     ],
 
     # ========================================================================

@@ -4,7 +4,8 @@ export const setupMonaco = (monaco: typeof MonacoTypes) => {
   const TYPES = ['kai', 'flux', 'selene', 'blaze', 'lani', 'let'];
   const CONTROL = ['sol', 'soluna', 'luna', 'orbit', 'cos', 'phase', 'wax', 'wane', 'warp', 'mos'];
   const DECL = ['zeta', 'void', 'local', 'hubble'];
-  const FUNCS = ['zara', 'lumina', 'nova', 'lumen'];
+  // Added 'spark' to the FUNCS array
+  const FUNCS = ['zara', 'lumina', 'nova', 'lumen', 'spark'];
   const LITERALS = ['iris', 'sage'];
   const LOGICAL = ['not', 'and', 'or'];
   const MISC = ['leo', 'label'];
@@ -136,6 +137,8 @@ export const setupMonaco = (monaco: typeof MonacoTypes) => {
             { label: 'nova', kind: SN, insertText: 'nova(${1:expression});', insertTextRules: ITR, detail: 'print (no newline)', range },
             { label: 'lumen', kind: SN, insertText: 'lumen(${1:expression});', insertTextRules: ITR, detail: 'println (with newline)', range },
             { label: 'lumina', kind: SN, insertText: 'lumina()', insertTextRules: ITR, detail: 'input function', range },
+            // Added the snippet for 'spark' right here!
+            { label: 'spark', kind: SN, insertText: 'spark()', insertTextRules: ITR, detail: 'unbuffered input (single char)', range },
             { label: 'iris', kind: KW, insertText: 'iris', insertTextRules: ITR, detail: 'true', range },
             { label: 'sage', kind: KW, insertText: 'sage', insertTextRules: ITR, detail: 'false', range },
             { label: 'and', kind: KW, insertText: 'and', insertTextRules: ITR, detail: 'logical AND', range },

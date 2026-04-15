@@ -130,7 +130,7 @@ STATES = {
     95: State('e', [96]), 
     96: State(REGDEF['free_delim'], end=True),  
     
-    97: State('s', [98, 102, 108, 115]),  
+    97: State('s', [98, 102, 108, 115, 336]),
     
     98: State('a', [99]), 
     99: State('g', [100]), 
@@ -411,6 +411,12 @@ STATES = {
     333: State('t', [334]), 
     334: State('a', [335]), 
     335: State(REGDEF['free_delim'], end=True), 
+
+    336: State('p', [337]), 
+    337: State('a', [338]), 
+    338: State('r', [339]), 
+    339: State('k', [340]), 
+    340: State(REGDEF['io_delim'], end=True),
 }
 
 ID_END_STATES = {

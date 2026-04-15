@@ -51,6 +51,22 @@ class PythonTranspiler:
             "    actual_idx = __soluna_index(idx) - 1",
             "    arr[actual_idx] = val",
             "",
+            "def __soluna_getch():",
+            "    import sys, os",
+            "    if os.name == 'nt':",  # Windows
+            "        import msvcrt",
+            "        return msvcrt.getch().decode('utf-8')",
+            "    else:",                # Mac/Linux
+            "        import tty, termios",
+            "        fd = sys.stdin.fileno()",
+            "        old_settings = termios.tcgetattr(fd)",
+            "        try:",
+            "            tty.setraw(sys.stdin.fileno())",
+            "            ch = sys.stdin.read(1)",
+            "        finally:",
+            "            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)",
+            "        if ch == '\\x03': raise KeyboardInterrupt", # Handle Ctrl+C
+            "        return ch",
         ]
         self.code = preamble + self.code
         self.visit(tree)
@@ -256,6 +272,8 @@ class PythonTranspiler:
     def visit_value(self, node):
         if self._has_token(node, "lumina"):
             return "input()"
+        if self._has_token(node, "spark"):
+            return "__soluna_getch()"
         return self.generic_visit(node)
 
     def visit_conditional_statement(self, node):

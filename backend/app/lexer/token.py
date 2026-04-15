@@ -13,7 +13,7 @@ RESERVED_WORDS = {
     'and', 'blaze', 'cos', 'flux', 'hubble', 'iris', 
     'kai', 'lani', 'leo', 'let', 'local', 'lumen', 'lumina', 'luna', 'mos', 'not', 
     'nova', 'or', 'orbit', 'phase', 'sage', 'selene', 'sol', 'soluna', 
-    'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'
+    'spark', 'star', 'void', 'wane', 'warp', 'wax', 'zara', 'zeru', 'zeta'
 }
 
 RESERVED_SYMBOLS = {

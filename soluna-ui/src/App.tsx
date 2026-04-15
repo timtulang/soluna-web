@@ -375,7 +375,7 @@ const App: React.FC = () => {
               <MonacoEditor
                 height="100%" width="100%" language="soluna"
                 path={activeFile.id}
-                value={activeFile.content} 
+                defaultValue={activeFile.content} 
                 onChange={handleCodeChange} 
                 onMount={handleEditorMount}
                 options={{

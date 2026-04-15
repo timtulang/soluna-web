@@ -1400,8 +1400,8 @@ class SemanticAnalyzer:
             expr = self._find_child(val, "expression")
             if expr: 
                 list_ref.append(expr)
-            elif self._has_token(val, "lumina"):
-                list_ref.append(val) # Captures the lumina() call
+            elif self._has_token(val, "lumina") or self._has_token(val, "spark"):
+                list_ref.append(val)
         next_tail = self._find_child(node, "value_init_tail")
         if next_tail: self._collect_values(next_tail, list_ref)
 
