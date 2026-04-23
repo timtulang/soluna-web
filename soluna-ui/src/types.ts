@@ -34,6 +34,7 @@ export type WsMessage = {
   output?: string;
   transpiledCode?: string;
   isWaitingForInput?: boolean;
+  inputMode?: 'line' | 'char';
   compilationProgress?: CompilationProgress;
 };
 

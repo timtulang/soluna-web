@@ -25,6 +25,7 @@ const App: React.FC = () => {
   
   const [output, setOutput] = useState<string>("");
   const [isWaitingForInput, setIsWaitingForInput] = useState<boolean>(false);
+  const [inputMode, setInputMode] = useState<'line' | 'char'>('line');
   const [inputValue, setInputValue] = useState<string>("");
 
   const [editingFileId, setEditingFileId] = useState<string | null>(null);
@@ -84,6 +85,7 @@ const App: React.FC = () => {
           }
           if (data.isWaitingForInput !== undefined) {
              setIsWaitingForInput(data.isWaitingForInput);
+             setInputMode(data.inputMode || 'line');
           }
           
           if (data.parseTree) {
@@ -108,15 +110,21 @@ const App: React.FC = () => {
       Write clean, efficient Soluna code to solve the user's problem. Do not explain the code, just provide the Soluna implementation.
       
       Soluna Syntax Reference:
-      - Types: kai (int), flux (float), selene (double), blaze (char), let (string), lani (boolean: iris=true, sage=false)
+      - Types: kai (int), flux (float), selene (double), blaze (char), selene (string), lani (boolean: iris=true, sage=false)
       - Variables: kai x = 5; zeta kai y = 10; (zeta means const)
-      - Console: lumen("Hello"); (println), nova("Hi"); (print), lumina() (input)
+      - Console: lumen("Hello"); (println), nova("Hi"); (print), lumina() (input), spark() (getch: no buffer input)
       - Arrays (Hubbles): hubble kai arr = {1, 2, 3}; arr[1] = 5; (1-indexed)
       - If/Else: sol x > 0 ... mos soluna x == 0 ... mos luna ... mos
       - While Loop: orbit x < 5 cos ... mos
       - For Loop: phase kai i = 1, 10, 1 cos ... mos (start, limit, step)
       - Do-While: wax ... wane x < 5
       - Functions: kai add(kai a, kai b) cos zara a + b; mos (zara is return)
+
+      Additional Notes:
+      - Focus on writing idiomatic Soluna code that is easy to read and understand.
+      - Use appropriate variable names and structure your code logically.
+      - Do not include any comments or explanations in the code output.
+      - Idetifiers rules: up to 20 chars, must start with a lowercase letter or an underscore, can contain lowercase letters and digits. No reserved keywords as identifiers.
       `;
 
       try {
@@ -195,8 +203,22 @@ const App: React.FC = () => {
     }
   }
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    
+    if (inputMode === 'char') {
+      if (wsRef.current?.readyState === WebSocket.OPEN && val.length > 0) {
+        wsRef.current.send(JSON.stringify({ input: val.slice(-1) })); // Send only the typed char
+        setInputValue("");
+        setIsWaitingForInput(false);
+      }
+    } else {
+      setInputValue(val);
+    }
+  };
+
   const handleInputSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
+    if (inputMode === 'line' && e.key === 'Enter') {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ input: inputValue }));
         setInputValue("");
@@ -469,10 +491,10 @@ const App: React.FC = () => {
                                             autoFocus
                                             type="text"
                                             value={inputValue}
-                                            onChange={(e) => setInputValue(e.target.value)}
+                                            onChange={handleInputChange} // <-- Hook up the new change handler
                                             onKeyDown={handleInputSubmit}
                                             className="flex-1 bg-transparent border-none outline-none text-zinc-300 p-0 m-0 focus:ring-0"
-                                            placeholder="Type input and press Enter..."
+                                            placeholder={inputMode === 'char' ? "Press any key..." : "Type input and press Enter..."}
                                         />
                                     </div>
                                 )}

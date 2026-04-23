@@ -243,7 +243,8 @@ class ExecutionEnv:
         asyncio.run_coroutine_threadsafe(
             self.ws.send_text(json.dumps({
                 "output": self.output_buffer,
-                "isWaitingForInput": True
+                "isWaitingForInput": True,
+                "inputMode": "line"  # Explicitly tell the frontend this is a line
             })),
             self.loop
         )
@@ -252,6 +253,31 @@ class ExecutionEnv:
             raise val 
             
         self.output_buffer += str(val) + "\n"
+        asyncio.run_coroutine_threadsafe(
+            self.ws.send_text(json.dumps({
+                "output": self.output_buffer,
+                "isWaitingForInput": False
+            })),
+            self.loop
+        )
+        return val
+
+    # --- NEW METHOD FOR spark() ---
+    def c_getch(self):
+        asyncio.run_coroutine_threadsafe(
+            self.ws.send_text(json.dumps({
+                "output": self.output_buffer,
+                "isWaitingForInput": True,
+                "inputMode": "char"  # Tell the frontend to intercept a single keystroke!
+            })),
+            self.loop
+        )
+        val = self.input_q.get()
+        if isinstance(val, Exception):
+            raise val 
+            
+        # Echo the character back to the console without a newline
+        self.output_buffer += str(val)
         asyncio.run_coroutine_threadsafe(
             self.ws.send_text(json.dumps({
                 "output": self.output_buffer,
@@ -335,6 +361,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         custom_globals = builtins.__dict__.copy()
                         custom_globals["print"] = environment.c_print
                         custom_globals["input"] = environment.c_input
+                        
+                        # Map the transpiler's __soluna_getch to our new method
+                        custom_globals["__soluna_getch"] = environment.c_getch
                         
                         exec(t_code, custom_globals)
                         

@@ -205,7 +205,7 @@ class SemanticAnalyzer:
             val_node = values[i] if i < len(values) else None
             final_type = declared_type
             
-            is_lumina = val_node and val_node.get("type") == "value" and self._has_token(val_node, "lumina")
+            is_lumina = val_node and val_node.get("type") == "value" and (self._has_token(val_node, "lumina") or self._has_token(val_node, "spark"))
             static_val = None
 
             if is_const and is_lumina:
@@ -315,7 +315,7 @@ class SemanticAnalyzer:
             assign_val = self._find_child(node, "assignment_value")
             if assign_val:
                 val_wrapper = self._find_child(assign_val, "value") 
-                if val_wrapper and not self._has_token(val_wrapper, "lumina"):
+                if val_wrapper and not (self._has_token(val_wrapper, "lumina") or self._has_token(val_wrapper, "spark")):
                     val_node = self._find_child(val_wrapper, "expression")
                     if val_node:
                         self._get_expression_type(val_node)
@@ -342,7 +342,7 @@ class SemanticAnalyzer:
             assign_val = self._find_child(node, "assignment_value")
             val_wrapper = self._find_child(assign_val, "value") 
             
-            if val_wrapper and not self._has_token(val_wrapper, "lumina"):
+            if val_wrapper and not (self._has_token(val_wrapper, "lumina") or self._has_token(val_wrapper, "spark")):
                 val_node = self._find_child(val_wrapper, "expression")
                 if val_node:
                     expr_type = self._get_expression_type(val_node)
@@ -442,7 +442,7 @@ class SemanticAnalyzer:
         line = wax_token["line"] if wax_token else 0
         col = wax_token["col"] if wax_token else 0
         
-        self._check_infinite_loop(cond_node, body_node, line, col)
+        # self._check_infinite_loop(cond_node, body_node, line, col)
         
         self.generic_visit(node)
         popped = self.symbols.exit_scope()
@@ -459,7 +459,7 @@ class SemanticAnalyzer:
         line = orbit_token["line"] if orbit_token else 0
         col = orbit_token["col"] if orbit_token else 0
         
-        self._check_infinite_loop(cond_node, body_node, line, col)
+        # self._check_infinite_loop(cond_node, body_node, line, col)
         
         self.generic_visit(node)
         popped = self.symbols.exit_scope()

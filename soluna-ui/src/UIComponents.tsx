@@ -20,7 +20,7 @@ export const TopMenuBar = ({
           <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={handleAddFile}>New File</button>
           
           {/* TEMPORARILY DISABLED: File Upload */}
-          {/* <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={openFile}>Open File...</button> */}
+          <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={openFile}>Open File...</button>
           
           <button className="w-full text-left px-4 py-2 hover:bg-yellow-500 hover:text-black transition-colors rounded-none" onClick={handleSaveFile}>Save File</button>
           <div className="h-px bg-zinc-800 my-1"></div>
@@ -39,7 +39,7 @@ export const TopMenuBar = ({
     </div>
     
     {/* TEMPORARILY DISABLED: File Upload */}
-    {/* <input type="file" ref={fileInputRef} onChange={handleFileRead} className="hidden" /> */}
+    <input type="file" ref={fileInputRef} onChange={handleFileRead} className="hidden" />
     
     <div className="flex-1"></div>
     <div className="text-[11px] text-zinc-600 font-mono">SOLUNA DEV ENVIRONMENT</div>
