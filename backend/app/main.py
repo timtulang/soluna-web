@@ -204,6 +204,13 @@ def run_pipeline(code: str, progress_callback=None):
                             
                         tac_code = generator.generate(parse_tree)  # 'tac_code' now holds either TAC or Python
                         
+                        # Print generated TAC instructions to console
+                        print("\n" + "="*60)
+                        print(f"Generated {ACTIVE_GENERATOR.upper()} Instructions:")
+                        print("="*60)
+                        print(tac_code)
+                        print("="*60 + "\n")
+                        
                         loop.run_until_complete(send_progress("codegen", 100, "Code generation complete"))
                         
                     except SemanticError as se:
