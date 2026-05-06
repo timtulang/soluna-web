@@ -170,12 +170,12 @@ class SemanticAnalyzer:
         self.is_inside_local_decl = False
 
     def visit_var_dec(self, node):
-        is_local = self.is_inside_local_decl or self.symbols.current_scope_level > 0
+        is_local = self.is_inside_local_decl or self.symbols.current_scope_level > 0 # False
         
-        is_const = self._has_token_recursive(node, "zeta")
+        is_const = self._has_token_recursive(node, "zeta") # True
         
-        type_node = self._find_child(node, "data_type")
-        declared_type = self._extract_type_name(type_node)
+        type_node = self._find_child(node, "data_type") # "kai"
+        declared_type = self._extract_type_name(type_node) # "kai"
 
         init_node = self._find_child(node, "var_init")
         if init_node:

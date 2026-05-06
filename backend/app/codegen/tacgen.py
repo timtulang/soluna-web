@@ -387,20 +387,29 @@ class TACGenerator:
         var_init = self._find_child(node, "var_init")
         if not var_init: return ""
         
-        ident_node = self._find_token(var_init, "identifier")
-        init_node = self._find_child(var_init, "value_init")
+        # 1. Grab ALL identifiers on the left
+        identifiers = self._collect_all_identifiers(var_init)
         
-        if ident_node and init_node:
-            var_name = ident_node["value"]
+        # 2. Grab ALL values on the right
+        init_node = self._find_child(var_init, "value_init")
+        values = self._collect_all_values(init_node)
+        
+        # 3. Pair them up!
+        for i, var_name in enumerate(identifiers):
             self.symbol_table[var_name] = data_type
-
             self.emit(f"type {var_name} {data_type}")
-
-            val_temp = self.visit(init_node).strip()
-            # Strip leading "=" if present (from AST structure)
-            if val_temp.startswith("="):
-                val_temp = val_temp[1:].strip()
-            self.emit(f"{var_name} = {val_temp}")
+            
+            # If we have a matching value, use it
+            if i < len(values):
+                val_temp = values[i]
+                # Strip leading "=" if present (from AST structure)
+                if val_temp.startswith("="):
+                    val_temp = val_temp[1:].strip()
+                self.emit(f"{var_name} = {val_temp}")
+            else:
+                # Fallback default value if there are more variables than assigned values
+                self.emit(f"{var_name} = 0")
+                
         return ""
 
     def visit_assignment_statement(self, node):
@@ -1422,3 +1431,50 @@ class TACGenerator:
             if child and child.get("type") == "TOKEN" and child.get("value") == value:
                 return True
         return False
+    
+    def _collect_all_identifiers(self, node):
+        """
+        Recursively extract all variable names from a declaration node.
+        Stops at 'value_init' to avoid accidentally grabbing variables from the right-hand side.
+        """
+        identifiers = []
+        if not node: 
+            return identifiers
+        
+        # Stop digging if we hit the initialization part (the right side of the '=')
+        if node.get("type") == "value_init":
+            return identifiers
+            
+        # If we find an identifier token, grab its name
+        if node.get("type") == "TOKEN" and node.get("token_type") == "identifier":
+            identifiers.append(node["value"])
+            
+        # Keep digging through the children
+        if "children" in node:
+            for child in node.get("children", []):
+                identifiers.extend(self._collect_all_identifiers(child))
+                
+        return identifiers
+
+    def _collect_all_values(self, node):
+        """
+        Recursively evaluate and extract all TAC variables/literals for multiple assignments.
+        """
+        values = []
+        if not node: 
+            return values
+        
+        # When we hit an actual expression or value node, compile it to TAC and save the result temp/literal
+        if node.get("type") in ["expression", "value"]:
+            val_temp = self.visit(node).strip()
+            if val_temp:
+                values.append(val_temp)
+            # Stop recursing down this specific branch; the visitor already processed its children!
+            return values
+            
+        # Keep digging to find more expressions in the list/tail
+        if "children" in node:
+            for child in node.get("children", []):
+                values.extend(self._collect_all_values(child))
+                
+        return values
