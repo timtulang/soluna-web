@@ -607,6 +607,17 @@ class SemanticAnalyzer:
         # Check: are we currently inside a loop?
         if not self.symbols.is_inside_loop():
              raise SemanticError("Statement 'warp' can only be used inside a loop.", 0, 0)
+        
+    def visit_continue_statements(self, node):
+        """
+        Handle continue statement: leo;
+        
+        Continue can ONLY be used inside a loop (while, for, repeat-until).
+        Using continue outside a loop is a semantic error.
+        """
+        # Check: are we currently inside a loop?
+        if not self.symbols.is_inside_loop():
+             raise SemanticError("Statement 'leo' (continue) can only be used inside a loop.", 0, 0)
 
     # ==========================================
     # 4. FUNCTIONS: Handling function definitions and calls

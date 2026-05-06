@@ -41,6 +41,7 @@ class TACGenerator:
         self._node_cache = {}  # Cache for child lookups
         self._token_cache = {}  # Cache for token lookups
         self.loop_exits = []
+        self.loop_continues = []
 
     def new_temp(self):
         """
@@ -660,8 +661,8 @@ class TACGenerator:
         
         self.emit(f"ifFalse {cond_temp} goto {l_end}")
         
-        # ---> NEW: Push the exit label to the stack
         self.loop_exits.append(l_end)
+        self.loop_continues.append(l_start)
         
         statements = self._find_child(node, "loop_statements")
         if statements: self.visit(statements)
@@ -741,6 +742,7 @@ class TACGenerator:
         # --- LOOP GENERATION ---
         l_start = self.new_label()
         l_end = self.new_label()
+        l_incr = self.new_label()
         
         self.emit(f"{l_start}:")
         
@@ -755,6 +757,7 @@ class TACGenerator:
         if not hasattr(self, 'loop_exits'):
             self.loop_exits = []
         self.loop_exits.append(l_end)
+        self.loop_continues.append(l_incr)
         
         # Execute body
         statements = self._find_child(node, "loop_statements")
@@ -762,7 +765,10 @@ class TACGenerator:
         if statements: self.visit(statements)
             
         # Pop loop exit
+        self.loop_continues.pop()
         self.loop_exits.pop()
+
+        self.emit(f"{l_incr}:")
             
         # Increment and jump back
         step_temp = self.new_temp()
@@ -787,6 +793,16 @@ class TACGenerator:
             self.emit(f"goto {current_exit}")
         else:
             self.emit("break") # Fallback
+        return ""
+    
+    def visit_continue_statements(self, node):
+        """
+        Handle continue statements inside loops.
+        Emits a TAC jump to the nearest enclosing loop's continue target.
+        """
+        if hasattr(self, 'loop_continues') and self.loop_continues:
+            current_continue = self.loop_continues[-1]
+            self.emit(f"goto {current_continue}")
         return ""
 
     # --- Functions ---
