@@ -15,6 +15,7 @@ Key features:
 """
 
 import re
+import asyncio
 from typing import Any, Dict, List, Optional, Callable
 
 
@@ -56,6 +57,13 @@ class TACInterpreter:
             output_callback: Async function to call for output(value, newline=True)
             getch_callback: Async function to call for single character input
         """
+
+        self.param_stack: List[Any] = []
+        self.break_flag = False
+        
+        self.step_count = 0
+        self.MAX_STEPS = 50000
+
         self.tac_code = tac_code
         self.instructions = [line.strip() for line in tac_code.split('\n') if line.strip() and not line.strip().startswith(';')]
         
@@ -115,17 +123,33 @@ class TACInterpreter:
     async def run(self):
         """Execute all TAC instructions sequentially."""
         while self.pc < len(self.instructions):
+            # ---> NEW: Failsafe checks
+            self.step_count += 1
+            if self.step_count > self.MAX_STEPS:
+                raise RuntimeError("Execution Limit Exceeded: Infinite loop detected.")
+            
+            # Yield control back to the laptop every 500 instructions
+            if self.step_count % 500 == 0:
+                await asyncio.sleep(0)
+
             inst = self.instructions[self.pc]
             
-            if inst.endswith(':') or inst.startswith('func ') or inst.startswith('endfunc'):
-                # Skip labels, function headers, and endfunc
+            # Fast-forward over function bodies during global execution!
+            if inst.startswith('func '):
+                match = re.match(r'func\s+(\w+)\(', inst)
+                if match:
+                    func_name = match.group(1)
+                    if func_name in self.functions:
+                        self.pc = self.functions[func_name]['end_pc'] + 1
+                        continue
+            
+            if inst.endswith(':') or inst.startswith('endfunc'):
                 self.pc += 1
                 continue
             
             await self._execute_instruction(inst)
             
             if self.break_flag:
-                # Break out of loop - handled by jump logic
                 self.break_flag = False
             
             self.pc += 1
@@ -137,6 +161,10 @@ class TACInterpreter:
         # Handle different instruction types
         if inst.startswith('param '):
             self._handle_param(inst)
+        elif inst.startswith('type '):
+            parts = inst.split()
+            if len(parts) == 3:
+                self.types[parts[1]] = parts[2]
         elif inst.startswith('call '):
             await self._handle_call(inst)
         elif inst.startswith('return'):
@@ -211,9 +239,17 @@ class TACInterpreter:
         return_value = None
         
         while self.pc < func_info['end_pc']:
+            # ---> NEW: Failsafe checks for functions
+            self.step_count += 1
+            if self.step_count > self.MAX_STEPS:
+                raise RuntimeError(f"Execution Limit Exceeded: Infinite loop detected inside function '{func_name}'.")
+                
+            if self.step_count % 500 == 0:
+                await asyncio.sleep(0)
+
             inst = self.instructions[self.pc]
+            
             if inst.startswith('return'):
-                # Parse return value if present
                 if inst == 'return':
                     return_value = None
                 else:
@@ -281,35 +317,38 @@ class TACInterpreter:
         lhs = parts[0].strip()
         rhs = parts[1].strip()
         
-        # Handle function calls: temp = call func_name, argcount
         if rhs.startswith('call '):
-            match = re.match(r'call\s+(\w+),\s*(\d+)', rhs)
-            if match:
-                func_name = match.group(1)
-                arg_count = int(match.group(2))
-                
-                # Pop arguments from parameter stack
-                args = self.param_stack[-arg_count:] if arg_count > 0 else []
-                self.param_stack = self.param_stack[:-arg_count] if arg_count > 0 else self.param_stack
-                
-                # Call function
-                if func_name in self.functions:
-                    result = await self._call_function(func_name, args)
-                    self._set_value(lhs, result)
-                return
+            await self._handle_call(inst)
+            return
         
         # Evaluate RHS
         value = await self._eval_expr_async(rhs)
         
         # Handle array indexing on LHS
         if '[' in lhs:
-            match = re.match(r'(\w+)\[(\d+)\]', lhs)
+            match = re.match(r'^(\w+)\[(.*)\]$', lhs)
             if match:
                 arr_name = match.group(1)
-                idx = int(match.group(2))
+                idx_str = match.group(2)
+                
+                try:
+                    idx = int(idx_str)
+                except ValueError:
+                    idx = int(self._eval_expr(idx_str))
+                
                 arr = self._get_value(arr_name)
+                actual_idx = idx - 1
+                
                 if isinstance(arr, (list, SolunaList)):
-                    arr[idx] = value
+                    if arr_name in self.types:
+                        # ---> NEW: Unpack the base type from the 'hubble_' prefix
+                        base_type = self.types[arr_name]
+                        if base_type.startswith('hubble_'):
+                            base_type = base_type[7:]
+                        value = self._cast_value(value, base_type)
+                    arr[actual_idx] = value
+                elif isinstance(arr, str):
+                    raise RuntimeError(f"Runtime Error: Strings are immutable, cannot assign to {arr_name}[{idx}]")
                 return
         
         # Regular assignment
@@ -334,6 +373,16 @@ class TACInterpreter:
         if not expr:
             return ""
         
+        while expr.startswith('(') and expr.endswith(')'):
+            expr = expr[1:-1].strip()
+
+        if expr.startswith('#'):
+            var_name = expr[1:].strip()
+            var = self._get_value(var_name)
+            if isinstance(var, (list, SolunaList, str)):
+                return len(var)
+            return 0
+
         # Handle literals FIRST - before trying to split on operators
         if expr == 'True':
             return True
@@ -355,9 +404,10 @@ class TACInterpreter:
         
         # Handle string literals (must be before operator splitting!)
         if expr.startswith('"') and expr.endswith('"') and len(expr) > 1:
-            return expr[1:-1]
+            return self._process_escapes(expr[1:-1])
+            
         if expr.startswith("'") and expr.endswith("'") and len(expr) > 1:
-            return expr[1:-1]
+            return self._process_escapes(expr[1:-1])
         
         # Handle array literals: newarray
         if expr == 'newarray':
@@ -365,20 +415,26 @@ class TACInterpreter:
         
         # Handle array access: arr[idx]
         if '[' in expr and ']' in expr:
-            match = re.match(r'(\w+)\[(\w+)\]', expr)
+            match = re.match(r'^(\w+)\[(.*)\]$', expr)
             if match:
                 arr_name = match.group(1)
                 idx_str = match.group(2)
+                
                 try:
                     idx = int(idx_str)
                 except ValueError:
-                    idx = self._eval_expr(idx_str)
-                    if not isinstance(idx, int):
-                        idx = int(idx)
+                    idx = int(self._eval_expr(idx_str))
                 
                 arr = self._get_value(arr_name)
+                
+                # ---> CRITICAL FIX: Match the -1 offset used in assignment
+                actual_idx = idx - 1
+                
                 if isinstance(arr, (list, SolunaList)):
-                    return arr[idx] if idx < len(arr) else 0
+                    return arr[actual_idx] if 0 <= actual_idx < len(arr) else 0
+                elif isinstance(arr, str):
+                    return arr[actual_idx] if 0 <= actual_idx < len(arr) else ""
+                
                 return 0
         
         # Handle function calls: len(var)
@@ -410,8 +466,8 @@ class TACInterpreter:
         # Handle binary operations: a op b
         # Order matters! Check from lowest precedence to highest
         # But only if not inside a string literal
-        for op in [' OR ', ' AND ', ' == ', ' != ', ' < ', ' > ', ' <= ', ' >= ', 
-                   ' CONCAT ', ' + ', ' - ', ' * ', ' / ', ' % ', ' // ', ' POW ']:
+        for op in [' OR ', ' AND ', ' == ', ' != ', ' <= ', ' >= ', ' < ', ' > ', 
+                   ' CONCAT ', ' + ', ' - ', ' ** ', ' * ', ' // ', ' / ', ' % ', ' POW ']:
             # Find operator not inside string literals
             pos = 0
             in_string = False
@@ -519,7 +575,60 @@ class TACInterpreter:
     
     def _set_value(self, name: str, value: Any):
         """Set value of a variable or temporary."""
+
+        if name in self.types:
+            value = self._cast_value(value, self.types[name])
         if name.startswith('t'):
             self.temporaries[name] = value
         else:
             self.variables[name] = value
+
+    def _cast_value(self, value: Any, expected_type: str) -> Any:
+        """Mimics _cast_lumina from the Python transpiler to enforce types."""
+        try:
+            # ---> NEW: Pass arrays straight through without trying to cast them!
+            if expected_type.startswith('hubble_'):
+                if not isinstance(value, (list, SolunaList)):
+                    raise ValueError(f"Expected array, got {type(value)}")
+                return value
+                
+            if expected_type == 'kai':
+                return int(float(value)) if isinstance(value, str) else int(value)
+            elif expected_type in ['flux']: 
+                return float(value)
+            elif expected_type == 'lani':
+                if isinstance(value, str):
+                    return value.lower() in ['iris', 'true']
+                return bool(value)
+            elif expected_type in ['selene', 'let']: 
+                return str(value)
+            elif expected_type == 'blaze':
+                s = str(value)
+                if len(s) != 1:
+                    raise ValueError("Char must be length 1")
+                return s
+        except (ValueError, TypeError):
+            raise RuntimeError(f"Runtime Error: Cannot cast '{value}' to type {expected_type}")
+        
+        return value
+    
+    def _process_escapes(self, text: str) -> str:
+        """Process standard string escape sequences."""
+        # Replace double backslashes with a temporary placeholder to protect them
+        text = text.replace('\\\\', '\x00')
+        
+        # Process all the standard escapes from the Soluna specification
+        text = text.replace('\\a', '\a')    # Bell
+        text = text.replace('\\b', '\b')    # Backspace
+        text = text.replace('\\f', '\f')    # Formfeed
+        text = text.replace('\\n', '\n')    # Newline
+        text = text.replace('\\r', '\r')    # Carriage return
+        text = text.replace('\\t', '\t')    # Tab
+        text = text.replace('\\v', '\v')    # Vertical tab
+        text = text.replace('\\"', '"')     # Double quote
+        text = text.replace("\\'", "'")     # Single quote
+        
+        # Restore the protected literal backslashes
+        text = text.replace('\x00', '\\')
+        
+        return text

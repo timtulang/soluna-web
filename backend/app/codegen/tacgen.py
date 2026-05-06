@@ -40,6 +40,7 @@ class TACGenerator:
         self.symbol_table = {}
         self._node_cache = {}  # Cache for child lookups
         self._token_cache = {}  # Cache for token lookups
+        self.loop_exits = []
 
     def new_temp(self):
         """
@@ -210,6 +211,12 @@ class TACGenerator:
             factor_node = self._find_child(curr_tail, "expr_factor")
             factor_str = self.visit(factor_node)
             
+            # Standardize operators early
+            if op_val in ["&&", "and"]: op_val = "AND"
+            elif op_val in ["||", "or"]: op_val = "OR"
+            elif op_val == "..": op_val = "CONCAT"
+            elif op_val == "^": op_val = "POW"
+            
             parts.append(op_val)
             parts.append(factor_str)
             curr_tail = self._find_child(curr_tail, "expr_tail")
@@ -217,23 +224,35 @@ class TACGenerator:
         if len(parts) == 1:
             return parts[0]
 
-        # Left-to-right sequential evaluation into temporaries
-        result = parts[0]
-        for i in range(1, len(parts), 2):
-            op = parts[i]
-            right = parts[i+1]
-            
-            # Standardize logic/concat operators and exponentiation
-            if op in ["&&", "and"]: op = "AND"
-            elif op in ["||", "or"]: op = "OR"
-            elif op == "..": op = "CONCAT"
-            elif op == "^": op = "POW"
-                
-            temp = self.new_temp()
-            self.emit(f"{temp} = {result} {op} {right}")
-            result = temp
-            
-        return result
+        # ---> NEW: Mathematical and Logical Order of Operations
+        precedence_levels = [
+            ['POW'],                                     # 1. Exponents
+            ['*', '/', '//', '%'],                       # 2. Multiplication/Division
+            ['+', '-', 'CONCAT'],                        # 3. Addition/Subtraction
+            ['<', '>', '<=', '>=', '==', '!='],          # 4. Comparisons
+            ['AND'],                                     # 5. Logical AND
+            ['OR']                                       # 6. Logical OR
+        ]
+        
+        # Scan through the expression for each precedence level
+        for level in precedence_levels:
+            i = 1
+            while i < len(parts):
+                if parts[i] in level:
+                    left = parts[i-1]
+                    op = parts[i]
+                    right = parts[i+1]
+                    
+                    temp = self.new_temp()
+                    self.emit(f"{temp} = {left} {op} {right}")
+                    
+                    # Replace the processed left, op, and right items with the new temp variable
+                    parts[i-1:i+2] = [temp]
+                    # Do not increment i, as the list shrank around the current index
+                else:
+                    i += 2
+                    
+        return parts[0]
 
     def visit_simple_expr(self, node):
         """
@@ -306,6 +325,19 @@ class TACGenerator:
 
         # Fallback: process all children
         return self.generic_visit(node)
+    
+    def visit_expr_factor(self, node):
+        """
+        Prevent parentheses from leaking into TAC instructions.
+        If this factor is a parenthesized expression, return just the inner result.
+        """
+        # If the factor contains an inner expression (e.g., inside parentheses)
+        expr_node = self._find_child(node, "expression")
+        if expr_node and self._has_token(node, "("):
+            return self.visit(expr_node)
+            
+        # Otherwise, process normally
+        return self.generic_visit(node)
 
     def visit_unary_negation(self, node):
         """
@@ -360,6 +392,9 @@ class TACGenerator:
         if ident_node and init_node:
             var_name = ident_node["value"]
             self.symbol_table[var_name] = data_type
+
+            self.emit(f"type {var_name} {data_type}")
+
             val_temp = self.visit(init_node).strip()
             # Strip leading "=" if present (from AST structure)
             if val_temp.startswith("="):
@@ -621,8 +656,14 @@ class TACGenerator:
         
         self.emit(f"ifFalse {cond_temp} goto {l_end}")
         
+        # ---> NEW: Push the exit label to the stack
+        self.loop_exits.append(l_end)
+        
         statements = self._find_child(node, "loop_statements")
         if statements: self.visit(statements)
+            
+        # ---> NEW: Pop it off when the loop body finishes
+        self.loop_exits.pop()
         
         self.emit(f"goto {l_start}")
         self.emit(f"{l_end}:")
@@ -673,31 +714,51 @@ class TACGenerator:
         limit_node = self._find_child(params, "for_limit")
         step_node = self._find_child(params, "for_step")
         
+        # ---> CRITICAL FIX: Specifically target the identifier, ignoring the 'kai' keyword
         ident = self._find_token(start_node, "identifier")
         var_name = ident["value"] if ident else "i"
         
+        # 2. Extract the starting value
         start_factor = self._find_child(start_node, "expr_factor")
-        start_val = self.visit(start_factor) if start_factor else "0"
+        start_val = self.visit(start_factor).strip() if start_factor else "0"
         self.emit(f"{var_name} = {start_val}")
         
+        # 3. Extract the limit value (safely handling parenthesized expressions)
         limit_factor = self._find_child(limit_node, "expr_factor")
-        limit_val = self.visit(limit_factor) if limit_factor else "0"
+        limit_val = self.visit(limit_factor).strip() if limit_factor else "0"
+        # If it's a raw parenthesized string like "(amount+1)", strip it so TAC handles it cleanly
+        if limit_val.startswith("(") and limit_val.endswith(")"):
+            limit_val = limit_val[1:-1]
         
+        # 4. Extract the step value
         step_factor = self._find_child(step_node, "expr_factor")
-        step_val = self.visit(step_factor) if step_factor else "1"
+        step_val = self.visit(step_factor).strip() if step_factor else "1"
 
+        # --- LOOP GENERATION ---
         l_start = self.new_label()
         l_end = self.new_label()
         
         self.emit(f"{l_start}:")
         
+        # Evaluate condition
         cond_temp = self.new_temp()
-        self.emit(f"{cond_temp} = {var_name} < {limit_val}") # Assumes standard counting up
+        self.emit(f"{cond_temp} = {var_name} < {limit_val}")
         self.emit(f"ifFalse {cond_temp} goto {l_end}")
         
+        # Push loop exit for break (warp) statements
+        if not hasattr(self, 'loop_exits'):
+            self.loop_exits = []
+        self.loop_exits.append(l_end)
+        
+        # Execute body
         statements = self._find_child(node, "loop_statements")
+        
         if statements: self.visit(statements)
             
+        # Pop loop exit
+        self.loop_exits.pop()
+            
+        # Increment and jump back
         step_temp = self.new_temp()
         self.emit(f"{step_temp} = {var_name} + {step_val}")
         self.emit(f"{var_name} = {step_temp}")
@@ -714,7 +775,12 @@ class TACGenerator:
         from the enclosing loop. The TAC interpreter/backend is responsible
         for resolving this to the appropriate goto <loop_end> jump.
         """
-        self.emit("break")
+        if hasattr(self, 'loop_exits') and self.loop_exits:
+            # Grab the last item in the stack (the most deeply nested loop)
+            current_exit = self.loop_exits[-1]
+            self.emit(f"goto {current_exit}")
+        else:
+            self.emit("break") # Fallback
         return ""
 
     # --- Functions ---
@@ -750,14 +816,18 @@ class TACGenerator:
         func_name = ident_node["value"]
         
         # Extract parameters
-        params_node = self._find_child(node, "func_params")
         params = []
+        params_node = self._find_child(node, "func_params")
         if params_node:
             self._collect_params(params_node, params)
         
         # Emit function header with parameters
         params_str = ", ".join([p["name"] for p in params]) if params else ""
         self.emit(f"func {func_name}({params_str}):")
+        
+        # ---> NEW: Register parameter types in the TAC so the interpreter knows how to cast them
+        for p in params:
+            self.emit(f"type {p['name']} {p['type']}")
         
         # Process function body
         statements = self._find_child(node, "statements")
@@ -775,21 +845,31 @@ class TACGenerator:
         
         This allows TAC generation to understand parameter types when needed.
         """
-        if not node: return
-        param_node = self._find_child(node, "param")
-        if param_node:
-            type_node = self._find_child(param_node, "data_type")
-            p_type = self._extract_type_name(type_node)
-            ident = self._find_token(param_node, "identifier")
-            if ident:
-                param_list.append({
-                    "name": ident["value"],
-                    "type": p_type
-                })
-        tail = self._find_child(node, "param_tail")
-        if tail:
-            self._collect_params(tail, param_list)
-
+        if not node or "children" not in node: 
+            return
+            
+        for child in node["children"]:
+            if not child: 
+                continue
+                
+            if child.get("type") == "param":
+                type_node = self._find_child(child, "data_type")
+                p_type = self._extract_type_name(type_node)
+                
+                # ---> NEW: Register parameter as an array if 'hubble' is present
+                if self._find_token(child, "hubble"):
+                    p_type = f"hubble_{p_type}"
+                    
+                ident = self._find_token(child, "identifier")
+                
+                if ident:
+                    param_list.append({
+                        "name": ident["value"],
+                        "type": p_type
+                    })
+                    
+            elif child.get("type") == "param_tail":
+                self._collect_params(child, param_list)
     def _extract_type_name(self, type_node):
         """
         Extract type name from a data_type node.
@@ -893,9 +973,18 @@ class TACGenerator:
         Returns a list of temporary variables holding the argument values.
         """
         args = []
+        if not node or "children" not in node:
+            return args
+            
         for child in node.get("children", []):
             if child.get("type") == "expression":
-                args.append(self.visit(child))
+                val = self.visit(child)
+                if val:
+                    args.append(val)
+            elif child.get("type") == "func_call_args_tail":
+                # ---> NEW: Recurse into nested tails to grab remaining arguments
+                args.extend(self.visit_func_call_args_tail(child))
+                
         return args
 
     def visit_func_return(self, node):
@@ -966,23 +1055,41 @@ class TACGenerator:
         if not ident: return ""
         var_name = ident["value"]
         
+        # ---> FIX 1: Register array types properly to prevent scalar casting crashes
+        data_type_node = self._find_child(node, "data_type")
+        dt_token = self._find_token(data_type_node) if data_type_node else None
+        if dt_token:
+            self.emit(f"type {var_name} hubble_{dt_token['value']}")
+            
         # Create array temporary
         arr_temp = self.new_temp()
         self.emit(f"{arr_temp} = newarray")
         
-        # Collect and initialize elements
-        elems_node = self._find_child(node, "hubble_elements")
-        if elems_node:
-            self._emit_array_elements(arr_temp, elems_node, 0)
-        
-        tail_node = self._find_child(node, "hubble_element_tail")
-        if tail_node:
-            elem_count = self._count_elements(elems_node) if elems_node else 0
-            self._emit_array_elements(arr_temp, tail_node, elem_count)
+        # ---> FIX 2: Collect and correctly assign all initialization elements
+        elements = self._collect_array_values(node)
+        for i, val in enumerate(elements):
+            self.emit(f"{arr_temp}[{i + 1}] = {val}")
         
         # Assign array to variable
         self.emit(f"{var_name} = {arr_temp}")
         return ""
+    
+    def _collect_array_values(self, node):
+        """Helper to recursively extract all initialization values for an array."""
+        values = []
+        if not node: return values
+        
+        if node.get("type") in ["hubble_elements", "hubble_element_tail"]:
+            expr_node = self._find_child(node, "expression")
+            if expr_node:
+                val = self.visit(expr_node)
+                if val: values.append(val.strip())
+                
+        if "children" in node:
+            for child in node.get("children", []):
+                values.extend(self._collect_array_values(child))
+                
+        return values
 
     def _emit_array_elements(self, arr_temp, node, start_idx):
         """
@@ -1072,9 +1179,10 @@ class TACGenerator:
             
             # Check if this is an assignment
             if self._has_token(node, "="):
-                expr_node = self._find_child(node, "expression")
-                if expr_node:
-                    val_temp = self.visit(expr_node)
+                # ---> CRITICAL FIX: Ensure we search for "value", not "expression"
+                val_node = self._find_child(node, "value")
+                if val_node:
+                    val_temp = self.visit(val_node).strip()
                     self.emit(f"{var_name}[{idx_val}] = {val_temp}")
             else:
                 # Just a read access - return temporary with the value
@@ -1082,7 +1190,7 @@ class TACGenerator:
                 self.emit(f"{result_temp} = {var_name}[{idx_val}]")
                 return result_temp
         return ""
-
+    
     def visit_string_or_table_len(self, node):
         """
         Handle len() function: returns length of string or table.
