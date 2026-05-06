@@ -24,32 +24,38 @@ mos
 nova("========== SHAPE OUTPUT ==========");
 
 sol choice == 1
-    phase kai i = 1, size, 1 cos
+    \\ Shifted limit to (size + 1)
+    phase kai i = 1, (size + 1), 1 cos
         kai spaces = size - i;
         sol spaces > 0
-            phase kai s = 1, spaces, 1 cos
+            \\ Shifted limit to (spaces + 1)
+            phase kai s = 1, (spaces + 1), 1 cos
                 lumen(" ");
             mos
         mos
         
         kai stars = (i * 2);
-        phase kai j = 1, stars, 1 cos
+        \\ Shifted limit to (stars + 1)
+        phase kai j = 1, (stars + 1), 1 cos
             lumen("*");
         mos
         nova("");
     mos
 mos
 soluna choice == 2
-    phase kai i = size, 1, -1 cos
+    \\ Shifted limit to 0 so it includes row 1
+    phase kai i = size, 0, -1 cos
         kai spaces = size - i;
         sol spaces > 0
-            phase kai s = 1, spaces, 1 cos
+            \\ Shifted limit to (spaces + 1)
+            phase kai s = 1, (spaces + 1), 1 cos
                 lumen(" ");
             mos
         mos
         
         kai stars = (i * 2);
-        phase kai j = 1, stars, 1 cos
+        \\ Shifted limit to (stars + 1)
+        phase kai j = 1, (stars + 1), 1 cos
             lumen("*");
         mos
         nova("");
@@ -57,16 +63,18 @@ soluna choice == 2
 mos
 soluna choice == 3
     kai width = size + 5;
-    phase kai i = 1, size, 1 cos
-        phase kai j = 1, width, 1 cos
+    \\ Shifted limits
+    phase kai i = 1, (size + 1), 1 cos
+        phase kai j = 1, (width + 1), 1 cos
             lumen("*");
         mos
         nova("");
     mos
 mos
 soluna choice == 4
-    phase kai i = 1, size, 1 cos
-        phase kai j = 1, size, 1 cos
+    \\ Shifted limits
+    phase kai i = 1, (size + 1), 1 cos
+        phase kai j = 1, (size + 1), 1 cos
             lumen("* ");
         mos
         nova("");
