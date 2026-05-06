@@ -253,7 +253,8 @@ STATES = {
     192: State('|', [193]), 
     193: State(DELIMS['and_or_delim'], end=True), 
     
-    194: State('.', [195]), 
+    # ---> PHASE 3: Object Dot Notation & String Concat
+    194: State('.', [195, 341]), 
     195: State('.', [196]), 
     196: State(DELIMS['string_concat_delim'], end=True), 
     
@@ -417,6 +418,9 @@ STATES = {
     338: State('r', [339]), 
     339: State('k', [340]), 
     340: State(REGDEF['io_delim'], end=True),
+    
+    # ---> PHASE 3: Single Dot Operator End State
+    341: State({*REGDEF['alphabet'], '_', *REGDEF['free_delim']}, end=True),
 }
 
 ID_END_STATES = {

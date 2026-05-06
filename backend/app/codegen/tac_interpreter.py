@@ -33,6 +33,13 @@ class SolunaList(list):
         if key >= len(self):
             self.extend([0] * (key - len(self) + 1))
         return super().__getitem__(key)
+    
+class SolunaObject(dict):
+    """
+    Dynamic dictionary that acts as a Soluna object.
+    Allows property access and handles missing properties gracefully.
+    """
+    pass
 
 
 class TACInterpreter:
@@ -77,6 +84,8 @@ class TACInterpreter:
         self.call_stack: List[Dict] = []  # Call stack for nested function calls
         self.param_stack: List[Any] = []  # Parameter stack for function calls
         self.break_flag = False  # For break statements in loops
+
+        self.this_stack: List[dict] = []
         
         # I/O callbacks
         self.input_callback = input_callback
@@ -101,7 +110,7 @@ class TACInterpreter:
             inst = self.instructions[i]
             if inst.startswith('func '):
                 # Parse: func name(param1, param2, ...):
-                match = re.match(r'func\s+(\w+)\(([^)]*)\):', inst)
+                match = re.match(r'func\s+([\w.]+)\(([^)]*)\):', inst)
                 if match:
                     func_name = match.group(1)
                     params_str = match.group(2).strip()
@@ -136,7 +145,7 @@ class TACInterpreter:
             
             # Fast-forward over function bodies during global execution!
             if inst.startswith('func '):
-                match = re.match(r'func\s+(\w+)\(', inst)
+                match = re.match(r'func\s+([\w.]+)\(', inst)
                 if match:
                     func_name = match.group(1)
                     if func_name in self.functions:
@@ -187,42 +196,49 @@ class TACInterpreter:
     
     async def _handle_call(self, inst: str):
         """Handle function call: temp = call func_name, argcount"""
-        # Pattern: [temp =] call func_name, argcount
-        match = re.match(r'(?:(\w+)\s*=\s*)?call\s+(\w+),\s*(\d+)', inst)
-        if not match:
-            return
+        # Note the updated regex allowing dots in the function name!
+        match = re.match(r'(?:([\w.]+)\s*=\s*)?call\s+([a-zA-Z0-9_.]+),\s*(\d+)', inst)
+        if not match: return
         
         result_var = match.group(1)
         func_name = match.group(2)
         arg_count = int(match.group(3))
         
-        # Pop arguments from parameter stack
         args = self.param_stack[-arg_count:] if arg_count > 0 else []
         self.param_stack = self.param_stack[:-arg_count] if arg_count > 0 else self.param_stack
         
-        # Handle built-in functions
         if func_name == 'nova':
-            if args:
-                await self.output_callback(str(args[0]) + '\n') if self.output_callback else print(args[0])
+            if args: await self.output_callback(str(args[0]) + '\n') if self.output_callback else print(args[0])
         elif func_name == 'lumen':
-            if args:
-                await self.output_callback(str(args[0])) if self.output_callback else print(args[0], end='')
+            if args: await self.output_callback(str(args[0])) if self.output_callback else print(args[0], end='')
         elif func_name == 'input':
-            # Input function - expects a type parameter
             result = await self.input_callback('let') if self.input_callback else input()
-            if result_var:
-                self._set_value(result_var, result)
+            if result_var: self._set_value(result_var, result)
         elif func_name == 'getch':
             result = await self.getch_callback() if self.getch_callback else input()
-            if result_var:
-                self._set_value(result_var, result)
+            if result_var: self._set_value(result_var, result)
         else:
-            # User-defined function
+            # OOP Method Execution
+            if '.' in func_name:
+                obj_name, method_name = func_name.split('.', 1)
+                obj = self._get_value(obj_name)
+                
+                if isinstance(obj, (dict, SolunaObject)):
+                    class_name = obj.get('__class__')
+                    actual_func_name = f"{class_name}.{method_name}"
+                    
+                    if actual_func_name in self.functions:
+                        self.this_stack.append(obj)
+                        result = await self._call_function(actual_func_name, args)
+                        self.this_stack.pop()
+                        
+                        if result_var: self._set_value(result_var, result)
+                        return
+                        
+            # Standard Function Execution
             if func_name in self.functions:
-                func_info = self.functions[func_name]
                 result = await self._call_function(func_name, args)
-                if result_var:
-                    self._set_value(result_var, result)
+                if result_var: self._set_value(result_var, result)
     
     async def _call_function(self, func_name: str, args: List[Any]) -> Any:
         """Call a user-defined function."""
@@ -289,7 +305,7 @@ class TACInterpreter:
     
     def _handle_conditional_jump(self, inst: str):
         """Handle conditional jump: ifFalse <cond> goto <label>"""
-        match = re.match(r'ifFalse\s+(\S+)\s+goto\s+(\w+)', inst)
+        match = re.match(r'ifFalse\s+(\S+)\s+goto\s+([\w.]+)', inst)
         if match:
             cond_var = match.group(1)
             label = match.group(2)
@@ -301,7 +317,7 @@ class TACInterpreter:
     
     def _handle_jump(self, inst: str):
         """Handle unconditional jump: goto <label>"""
-        match = re.match(r'goto\s+(\w+)', inst)
+        match = re.match(r'goto\s+([\w.]+)', inst)
         if match:
             label = match.group(1)
             if label in self.labels:
@@ -313,9 +329,7 @@ class TACInterpreter:
     
     async def _handle_assignment(self, inst: str):
         """Handle assignment: variable = expression or temp = expression"""
-        # Handle different cases
-        if ' = ' not in inst:
-            return
+        if ' = ' not in inst: return
         
         parts = inst.split(' = ', 1)
         lhs = parts[0].strip()
@@ -325,39 +339,46 @@ class TACInterpreter:
             await self._handle_call(inst)
             return
         
-        # Evaluate RHS
         value = await self._eval_expr_async(rhs)
         
-        # Handle array indexing on LHS
+        # ---> Handle array indexing on LHS
         if '[' in lhs:
-            match = re.match(r'^(\w+)\[(.*)\]$', lhs)
+            match = re.match(r'^([\w.]+)\[(.*)\]$', lhs)
             if match:
                 arr_name = match.group(1)
                 idx_str = match.group(2)
                 
-                try:
-                    idx = int(idx_str)
-                except ValueError:
-                    idx = int(self._eval_expr(idx_str))
+                try: idx = int(idx_str)
+                except ValueError: idx = int(self._eval_expr(idx_str))
                 
                 arr = self._get_value(arr_name)
                 actual_idx = idx - 1
                 
                 if isinstance(arr, (list, SolunaList)):
                     if arr_name in self.types:
-                        # ---> NEW: Unpack the base type from the 'hubble_' prefix
                         base_type = self.types[arr_name]
-                        if base_type.startswith('hubble_'):
-                            base_type = base_type[7:]
+                        if base_type.startswith('hubble_'): base_type = base_type[7:]
                         value = self._cast_value(value, base_type)
                     arr[actual_idx] = value
-                elif isinstance(arr, str):
-                    raise RuntimeError(f"Runtime Error: Strings are immutable, cannot assign to {arr_name}[{idx}]")
                 return
-        
+                
+        # ---> Handle dot notation (Object Property) assignment
+        if '.' in lhs and not lhs.replace('.', '', 1).isdigit():
+            match = re.match(r'^([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)$', lhs)
+            if match:
+                obj_name = match.group(1)
+                prop_name = match.group(2)
+                
+                obj = self._get_value(obj_name)
+                if isinstance(obj, (dict, SolunaObject)):
+                    obj[prop_name] = value
+                else:
+                    raise RuntimeError(f"Runtime Error: Cannot set property '{prop_name}' on non-object '{obj_name}'")
+                return
+
         # Regular assignment
         self._set_value(lhs, value)
-    
+
     async def _eval_expr_async(self, expr: str) -> Any:
         """Evaluate expression that might contain async calls."""
         # For now, delegate to sync version
@@ -383,9 +404,11 @@ class TACInterpreter:
                 return len(var)
             return 0
         
-        # ---> CRITICAL FIX: Restore 'newarray' initialization
         if expr == 'newarray':
             return SolunaList()
+            
+        if expr == 'newobject':
+            return SolunaObject()
             
         # 2. Literals (True/False/Strings)
         if expr in ['True', 'iris']: return True
@@ -397,6 +420,7 @@ class TACInterpreter:
             
         if expr.startswith("'") and expr.endswith("'") and len(expr) > 1:
             return self._process_escapes(expr[1:-1])
+        
         # 3. Unary NOT and Negation
         if expr.startswith('NOT '): ...
         if expr.startswith('-') and len(expr) > 1 and expr[1] not in '><!=': ...
@@ -413,7 +437,7 @@ class TACInterpreter:
 
         # ---> 5. ARRAY ACCESS MUST BE AT THE VERY BOTTOM <---
         if '[' in expr and ']' in expr:
-            match = re.match(r'^(\w+)\[(.*)\]$', expr)
+            match = re.match(r'^([\w.]+)\[(.*)\]$', expr)
             if match:
                 arr_name = match.group(1)
                 idx_str = match.group(2)
@@ -430,6 +454,19 @@ class TACInterpreter:
                 elif isinstance(arr, str):
                     return arr[actual_idx] if 0 <= actual_idx < len(arr) else ""
                 return 0
+            
+        if '.' in expr and not expr.replace('.', '', 1).isdigit():
+            # Match patterns like obj_name.property_name
+            match = re.match(r'^([a-zA-Z_]\w*)\.([a-zA-Z_]\w*)$', expr)
+            if match:
+                obj_name = match.group(1)
+                prop_name = match.group(2)
+                
+                obj = self._get_value(obj_name)
+                
+                if isinstance(obj, (dict, SolunaObject)):
+                    return obj.get(prop_name, 0)  # Default to 0 if undefined
+                raise RuntimeError(f"Runtime Error: Cannot read property '{prop_name}' of non-object '{obj_name}'")
         
         # 6. Fallback Variable Lookup
         return self._get_value(expr)
@@ -490,13 +527,18 @@ class TACInterpreter:
         return bool(value)
     
     def _get_value(self, name: str) -> Any:
-        """Get value of a variable or temporary."""
+        """Get value of a variable, temporary, or implicit 'this' property."""
+        # 1. Check if we are inside a method, and if the object owns this property
+        if self.this_stack and name in self.this_stack[-1]:
+            return self.this_stack[-1][name]
+            
+        # 2. Check variables and temporaries
         if name in self.variables:
             return self.variables[name]
         if name in self.temporaries:
             return self.temporaries[name]
         
-        # Try to parse as literal if not found
+        # 3. Fallback to parsing as literal
         try:
             if '.' in name:
                 return float(name)
@@ -505,10 +547,16 @@ class TACInterpreter:
             return name
     
     def _set_value(self, name: str, value: Any):
-        """Set value of a variable or temporary."""
-
+        """Set value of a variable, temporary, or implicit 'this' property."""
         if name in self.types:
             value = self._cast_value(value, self.types[name])
+            
+        # 1. If we are inside a method and the object owns this property, update it!
+        if self.this_stack and name in self.this_stack[-1]:
+            self.this_stack[-1][name] = value
+            return
+            
+        # 2. Otherwise, update variables/temporaries as normal
         if name.startswith('t'):
             self.temporaries[name] = value
         else:
@@ -517,10 +565,10 @@ class TACInterpreter:
     def _cast_value(self, value: Any, expected_type: str) -> Any:
         """Mimics _cast_lumina from the Python transpiler to enforce types."""
         try:
-            # ---> NEW: Pass arrays straight through without trying to cast them!
+            # ---> FIXED: Allow both Arrays and Objects to pass through freely
             if expected_type.startswith('hubble_'):
-                if not isinstance(value, (list, SolunaList)):
-                    raise ValueError(f"Expected array, got {type(value)}")
+                if not isinstance(value, (list, SolunaList, dict, SolunaObject)):
+                    raise ValueError(f"Expected array or object, got {type(value)}")
                 return value
                 
             if expected_type == 'kai':

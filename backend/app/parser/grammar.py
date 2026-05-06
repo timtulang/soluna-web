@@ -99,6 +99,7 @@ SOLUNA_GRAMMAR = {
         Production('data_type', ['blaze']),  # character
         Production('data_type', ['lani']),   # boolean
         Production('data_type', ['let']),    # string
+        Production('data_type', ['identifier']),
     ],
 
     # ========================================================================
@@ -111,7 +112,7 @@ SOLUNA_GRAMMAR = {
     ],
     'multi_identifiers': [
         # Handle comma-separated variable names: ", y, z" after the first variable
-        Production('multi_identifiers', [',', 'identifier', 'multi_identifiers']),
+        Production('multi_identifiers', [',', 'identifier', 'identifier_tail','multi_identifiers']),
         Production('multi_identifiers', [])  # Or no additional variables
     ],
     'value_init': [
@@ -138,6 +139,7 @@ SOLUNA_GRAMMAR = {
     # 6. ASSIGNMENTS: Changing the value of a variable
     # ========================================================================
     'assignment_statement': [
+        Production('assignment_statement', ['identifier', 'identifier_tail', 'multi_identifiers', 'assignment_value', ';']),
         # Standard assignment: "x = 5;"
         Production('assignment_statement', ['identifier', 'multi_identifiers', 'assignment_value', ';']),
         # Pre/post increment: "++x;" or "x++;"
@@ -216,8 +218,6 @@ SOLUNA_GRAMMAR = {
         Production('statement', ['loop_for_statement']),
         Production('statement', ['loop_repeat_until_statement']),
         Production('statement', ['output_statement']),
-        Production('statement', ['label_dec']),
-        Production('statement', ['label_goto'])
     ],
 
     # Loop statements (SAME as regular statements, but also allow 'break')
@@ -237,8 +237,7 @@ SOLUNA_GRAMMAR = {
         Production('loop_statement', ['loop_for_statement']),
         Production('loop_statement', ['loop_repeat_until_statement']),
         Production('loop_statement', ['output_statement']),
-        Production('loop_statement', ['label_dec']),
-        Production('loop_statement', ['label_goto']),
+        Production('loop_statement', ['continue_statements']),
         Production('loop_statement', ['break_statements'])
     ],
     'local_dec': [
@@ -252,7 +251,7 @@ SOLUNA_GRAMMAR = {
     'func_call': [
         # Format: function_name ( arguments ) ;
         # Example: "add(5, 3);"
-        Production('func_call', ['identifier', '(', 'func_call_args', ')', ';'])
+        Production('func_call', ['identifier', 'identifier_tail', '(', 'func_call_args', ')', ';'])
     ],
     'func_call_args': [
         # The values being passed to the function
@@ -266,7 +265,7 @@ SOLUNA_GRAMMAR = {
     ],
     'func_call_in_expr': [
         # Function calls can also appear inside expressions (without the semicolon)
-        Production('func_call_in_expr', ['identifier', '(', 'func_call_args', ')'])
+        Production('func_call_in_expr', ['identifier', 'identifier_tail', '(', 'func_call_args', ')'])
     ],
 
     # ========================================================================
@@ -311,6 +310,7 @@ SOLUNA_GRAMMAR = {
     'identifier_tail': [
         # Handle array indexing: var[0] or var[0][1]
         Production('identifier_tail', ['table_index', 'identifier_tail']),
+        Production('identifier_tail', ['.', 'identifier', 'identifier_tail']),
         Production('identifier_tail', []) 
     ],
 
@@ -484,6 +484,10 @@ SOLUNA_GRAMMAR = {
     'break_statements': [
         # Break out of the nearest loop
         Production('break_statements', ['warp', ';'])
+    ],
+
+    'continue_statements': [
+        Production('continue_statements', ['leo', ';'])
     ],
 
     # ========================================================================

@@ -327,6 +327,13 @@ class SemanticAnalyzer:
             var_name = ident_token["value"]
             line, col = ident_token["line"], ident_token["col"]
 
+            # ---> PHASE 3 FIX: Handle object property assignments (hero.role = "Warrior")
+            tail_node = self._find_child(node, "identifier_tail")
+            if tail_node and self._has_token_recursive(tail_node, "."):
+                if not self.symbols.lookup(var_name):
+                    raise SemanticError(f"Object '{var_name}' not declared.", line, col)
+                return # Skip strict checking for dynamic object properties
+
             # Look up the variable in symbol table
             symbol = self.symbols.lookup(var_name)
             if not symbol:
@@ -812,15 +819,34 @@ class SemanticAnalyzer:
                 for arg_expr in args:
                     self._get_expression_type(arg_expr)
                 return
+                
+            # ---> PHASE 3 FIX: Handle Method Calls (e.g. hero.takeDamage())
+            tail_node = self._find_child(node, "identifier_tail")
+            if tail_node and self._has_token_recursive(tail_node, "."):
+                # Just verify the base object exists
+                if not self.symbols.lookup(func_name):
+                    raise SemanticError(f"Object '{func_name}' not declared.", ident["line"], ident["col"])
+                
+                # Bypass strict signature check for dynamic object methods
+                args_node = self._find_child(node, "func_call_args")
+                args = []
+                if args_node:
+                    self._collect_args(args_node, args)
+                for arg_expr in args:
+                    self._get_expression_type(arg_expr)
+                return
             
             # Look up the function in the symbol table
             sym = self.symbols.lookup(func_name)
             if not sym:
                 raise SemanticError(f"Function '{func_name}' not declared.", ident["line"], ident["col"])
             
-            # Make sure it's actually a function (not a variable with the same name)
+            # Make sure it's actually a function
             if sym.get("category") != "function":
-                raise SemanticError(f"'{func_name}' is not callable.", ident["line"], ident["col"])
+                # ---> PHASE 3 FIX: Allow instantiating classes (tables of type 'let')
+                if not (sym.get("category") == "table" and sym.get("element_type") == "let"):
+                    raise SemanticError(f"'{func_name}' is not callable.", ident["line"], ident["col"])
+                return # It's a constructor, so we are done validating!
             
             # Collect all arguments
             args_node = self._find_child(node, "func_call_args")
@@ -828,14 +854,11 @@ class SemanticAnalyzer:
             if args_node:
                 self._collect_args(args_node, args)
             
-            # Get the expected parameter types from the function definition
             expected_params = sym.get("params", [])
             
-            # Check argument count
             if len(args) != len(expected_params):
                 raise SemanticError(f"Function '{func_name}' expects {len(expected_params)} arguments, got {len(args)}.", ident["line"], ident["col"])
             
-            # Check each argument's type
             for i, arg_expr in enumerate(args):
                 arg_type = self._get_expression_type(arg_expr)
                 expected_type = expected_params[i]
@@ -924,22 +947,23 @@ class SemanticAnalyzer:
         if node_type == "factor_value":
             ident = self._find_token(node, "identifier")
             tail = self._find_child(node, "identifier_tail")
-            if ident and tail and self._find_child(tail, "table_index"):
-                sym = self.symbols.lookup(ident["value"])
+            if ident and tail:
+                if self._find_child(tail, "table_index"):
+                    sym = self.symbols.lookup(ident["value"])
+                    if not sym:
+                        raise SemanticError(f"Variable '{ident['value']}' not declared.", ident["line"], ident["col"])
+                    if sym.get("category") == "table":
+                        sym["name"] = ident["value"] 
+                        self._validate_table_indices(tail, sym)
+                    elif sym.get("type") == "selene":
+                        self._validate_string_indices(tail, sym)
+                    else:
+                        raise SemanticError(f"Cannot index non-table, non-string variable '{ident['value']}'.", ident["line"], ident["col"])
                 
-                if not sym:
-                    raise SemanticError(f"Variable '{ident['value']}' not declared.", ident["line"], ident["col"])
-                
-                # Check if it's a table (hubble)
-                if sym.get("category") == "table":
-                    sym["name"] = ident["value"] 
-                    self._validate_table_indices(tail, sym)
-                # Check if it's a string variable being indexed (allowed)
-                elif sym.get("type") == "selene":
-                    # String indexing is allowed and returns a character (blaze)
-                    self._validate_string_indices(tail, sym)
-                else:
-                    raise SemanticError(f"Cannot index non-table, non-string variable '{ident['value']}'.", ident["line"], ident["col"])
+                # ---> PHASE 3 FIX: Validate base object exists for dot notation
+                elif self._has_token_recursive(tail, "."):
+                    if not self.symbols.lookup(ident["value"]):
+                        raise SemanticError(f"Object '{ident['value']}' not declared.", ident["line"], ident["col"])
             
         if node_type in ["func_call", "func_call_in_expr"]:
             self.visit_func_call(node)
@@ -1312,7 +1336,12 @@ class SemanticAnalyzer:
         """
         if not type_node: return 'void'
         token = self._find_token_in_tree(type_node)
-        return token["token_type"] if token else "unknown"
+        if not token: return "unknown"
+        
+        if token["token_type"] == "identifier":
+            return token["value"]
+            
+        return token["token_type"]
 
     def _find_token_in_tree(self, node):
         """
@@ -1442,13 +1471,29 @@ class SemanticAnalyzer:
         
         node_type = node.get("type")
         
+        # ---> PHASE 3 FIX: Handle object property reads (hero.age)
+        if node_type == "factor_value":
+            tail_node = self._find_child(node, "identifier_tail")
+            if tail_node and self._has_token_recursive(tail_node, "."):
+                return {"zeru"} # dynamic property
+                
         # For function calls, return type is the function's return type
         if node_type in ["func_call", "func_call_in_expr"]:
             ident = self._find_token(node, "identifier")
             if ident:
+                # ---> PHASE 3 FIX: Handle method calls returning dynamic types
+                tail_node = self._find_child(node, "identifier_tail")
+                if tail_node and self._has_token_recursive(tail_node, "."):
+                    return {"zeru"}
+                    
                 sym = self.symbols.lookup(ident["value"])
-                if sym: types.add(sym.get("type", sym.get("return_type", "unknown")))
-            return types 
+                if sym:
+                    # ---> PHASE 3 FIX: Constructors return their class name
+                    if sym.get("category") == "table" and sym.get("element_type") == "let":
+                        types.add(ident["value"])
+                    else:
+                        types.add(sym.get("type", sym.get("return_type", "unknown")))
+            return types
         
         if node_type == "string_or_table_len":
             ident = self._find_token(node, "identifier")

@@ -889,7 +889,12 @@ class TACGenerator:
         """
         if not type_node: return 'void'
         token = self._find_token_in_tree(type_node)
-        return token["token_type"] if token else "unknown"
+        if not token: return "unknown"
+        
+        if token["token_type"] == "identifier":
+            return token["value"]
+            
+        return token["token_type"]
 
 
     def _find_token_in_tree(self, node):
@@ -948,6 +953,10 @@ class TACGenerator:
         """
         ident = self._find_token(node, "identifier")
         func_name = ident["value"] if ident else ""
+
+        tail_node = self._find_child(node, "identifier_tail")
+        tail_str = self.visit(tail_node) if tail_node else ""
+        full_func_name = f"{func_name}{tail_str}"
         
         args_node = self._find_child(node, "func_call_args")
         args_list = []
@@ -965,7 +974,7 @@ class TACGenerator:
             self.emit(f"param {arg}")
             
         temp = self.new_temp()
-        self.emit(f"{temp} = call {func_name}, {len(args_list)}")
+        self.emit(f"{temp} = call {full_func_name}, {len(args_list)}")
         return temp
 
     def visit_func_call_in_expr(self, node):
@@ -1025,6 +1034,25 @@ class TACGenerator:
         else:
             self.emit("return")
         return ""
+    
+    def visit_identifier_tail(self, node):
+        """Handle dot notation (.property) and brackets ([index]) in variable names."""
+        if not node or "children" not in node: return ""
+        
+        # If it's dot notation: .property
+        if self._has_token(node, "."):
+            ident = self._find_token(node, "identifier")
+            if ident:
+                return f".{ident['value']}"
+                
+        # If it's bracket notation: [index]
+        if self._has_token(node, "["):
+            idx_node = self._find_child(node, "expression") or self._find_child(node, "value")
+            if idx_node:
+                idx_val = self.visit(idx_node).strip()
+                return f"[{idx_val}]"
+                
+        return self.generic_visit(node)
 
     def visit_table_dec(self, node):
         """
@@ -1061,24 +1089,59 @@ class TACGenerator:
         if not ident: return ""
         var_name = ident["value"]
         
-        # ---> FIX 1: Register array types properly to prevent scalar casting crashes
         data_type_node = self._find_child(node, "data_type")
         dt_token = self._find_token(data_type_node) if data_type_node else None
-        if dt_token:
-            self.emit(f"type {var_name} hubble_{dt_token['value']}")
+        dt_val = dt_token['value'] if dt_token else ""
+        
+        if dt_val:
+            self.emit(f"type {var_name} hubble_{dt_val}")
             
-        # Create array temporary
-        arr_temp = self.new_temp()
-        self.emit(f"{arr_temp} = newarray")
-        
-        # ---> FIX 2: Collect and correctly assign all initialization elements
-        elements = self._collect_array_values(node)
-        for i, val in enumerate(elements):
-            self.emit(f"{arr_temp}[{i + 1}] = {val}")
-        
-        # Assign array to variable
-        self.emit(f"{var_name} = {arr_temp}")
+        # ---> PHASE 3 FIX: Generate OOP Constructor Functions
+        if dt_val == "let":
+            self.emit(f"func {var_name}():")
+            obj_temp = self.new_temp()
+            self.emit(f"{obj_temp} = newobject")
+            
+            # Stamp the object with its class name for Late Binding!
+            self.emit(f"{obj_temp}.__class__ = \"{var_name}\"")
+            
+            props = self._collect_object_properties(node)
+            for prop_name, prop_val in props:
+                self.emit(f"{obj_temp}.{prop_name} = {prop_val}")
+                
+            self.emit(f"return {obj_temp}")
+            self.emit("endfunc")
+            
+            # Tell the compiler to go find and build the methods
+            self._compile_class_methods(var_name, node)
+        else:
+            arr_temp = self.new_temp()
+            self.emit(f"{arr_temp} = newarray")
+            elements = self._collect_array_values(node)
+            for i, val in enumerate(elements):
+                self.emit(f"{arr_temp}[{i + 1}] = {val}")
+            self.emit(f"{var_name} = {arr_temp}")
+            
         return ""
+    
+    def _compile_class_methods(self, class_name, node):
+        """Recursively find and compile all methods inside a class definition."""
+        if not node: return
+        
+        if node.get("type") == "func_def":
+            ident = self._find_token(node, "identifier")
+            if ident:
+                original_name = ident["value"]
+                # Temporarily rename function to ClassName.methodName
+                ident["value"] = f"{class_name}.{original_name}"
+                self.visit_func_def(node)
+                # Restore original name to not corrupt AST
+                ident["value"] = original_name
+            return # Stop recursing down this branch
+            
+        if "children" in node:
+            for child in node.get("children", []):
+                self._compile_class_methods(class_name, child)
     
     def _collect_array_values(self, node):
         """Helper to recursively extract all initialization values for an array."""
@@ -1096,6 +1159,41 @@ class TACGenerator:
                 values.extend(self._collect_array_values(child))
                 
         return values
+    
+    def _collect_object_properties(self, node):
+        """Recursively extract key-value pairs for object initialization."""
+        props = []
+        if not node: return props
+        
+        if node.get("type") == "table_var_dec":
+            init_node = self._find_child(node, "var_init_no_semi")
+            if init_node:
+                ident = self._find_token(init_node, "identifier")
+                val_init = self._find_child(init_node, "value_init")
+                
+                if ident:
+                    val_temp = "0"  # ---> FIXED: Default value for uninitialized properties
+                    if val_init:
+                        val_node = self._find_child(val_init, "value")
+                        if val_node:
+                            visited_val = self.visit(val_node).strip()
+                            if visited_val:
+                                val_temp = visited_val
+                                # Strip equals just in case
+                                if val_temp.startswith("="):
+                                    val_temp = val_temp[1:].strip()
+                    props.append((ident["value"], val_temp))
+            return props # Stop recursing down this branch
+        
+        # Keep searching
+        if "children" in node:
+            for child in node.get("children", []):
+                # Ignore method definitions
+                if child and child.get("type") == "func_def":
+                    continue
+                props.extend(self._collect_object_properties(child))
+                
+        return props
 
     def _emit_array_elements(self, arr_temp, node, start_idx):
         """
