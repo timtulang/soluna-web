@@ -16,8 +16,8 @@ from app.parser.adapter import adapter
 from app.parser.tree_builder import ParseTreeBuilder
 from app.semantics.analyzer import SemanticAnalyzer
 from app.semantics.errors import SemanticError
-from app.codegen.transpiler import PythonTranspiler
-from app.codegen.tacgen import TACGenerator  # <-- Import your new TAC generator
+from app.codegen.tacgen import TACGenerator
+from app.codegen.tac_interpreter import TACInterpreter
 
 app = FastAPI()
 
@@ -164,7 +164,7 @@ def run_pipeline(code: str, progress_callback=None):
     parse_tree = None
     parser_error = None
     warnings = []
-    transpiled_code = ""
+    tac_code = ""
     
     if len(lexer_errors) == 0 and len(tokens_from_lexer) > 0:
         # ===== STAGE 2: PARSING (20-50%) =====
@@ -191,18 +191,11 @@ def run_pipeline(code: str, progress_callback=None):
                         loop.run_until_complete(send_progress("semantic", 70, f"Found {len(warnings)} warnings"))
                         
                         # ===== STAGE 4: CODE GENERATION (80-100%) =====
-                        loop.run_until_complete(send_progress("codegen", 80, "Generating Python code..."))
-                        transpiler = PythonTranspiler()
-                        transpiled_code = transpiler.generate(parse_tree)
-                        
-                        loop.run_until_complete(send_progress("codegen", 90, "Generating TAC..."))
+                        loop.run_until_complete(send_progress("codegen", 80, "Generating TAC (Three-Address Code)..."))
                         tac_gen = TACGenerator()
                         tac_code = tac_gen.generate(parse_tree)
-                        print("\n=== GENERATED THREE-ADDRESS CODE ===")
-                        print(tac_code)
-                        print("====================================\n")
                         
-                        loop.run_until_complete(send_progress("complete", 100, "Compilation successful"))
+                        loop.run_until_complete(send_progress("codegen", 100, "TAC generation complete"))
                         
                     except SemanticError as se:
                         lexer_errors.append({
@@ -222,7 +215,7 @@ def run_pipeline(code: str, progress_callback=None):
             parser_error = str(e).strip()
             loop.run_until_complete(send_progress("error", 0, f"Parser error: {parser_error}"))
 
-    return final_tokens, lexer_errors, parse_tree, parser_error, warnings, transpiled_code
+    return final_tokens, lexer_errors, parse_tree, parser_error, warnings, tac_code
 
 class ExecutionEnv:
     def __init__(self, ws: WebSocket, loop: asyncio.AbstractEventLoop, input_q: queue.Queue):
@@ -230,62 +223,122 @@ class ExecutionEnv:
         self.loop = loop
         self.input_q = input_q
         self.output_buffer = ""
-        
-    def c_print(self, *args, end='\n', sep=' '):
-        text = sep.join(str(a) for a in args) + end
+    
+    async def output(self, text: str):
+        """Async callback for output (nova/lumen)"""
         self.output_buffer += text
-        asyncio.run_coroutine_threadsafe(
-            self.ws.send_text(json.dumps({"output": self.output_buffer})),
-            self.loop
-        )
+        try:
+            await self.ws.send_text(json.dumps({"output": self.output_buffer}))
+        except Exception as e:
+            if "close message" not in str(e).lower() and "closed" not in str(e).lower():
+                print(f"Output error: {e}")
+    
+    async def input(self, expected_type: str = "let") -> str:
+        """Async callback for input (lumina)"""
+        # Send request for input
+        try:
+            await self.ws.send_text(json.dumps({
+                "output": self.output_buffer,
+                "isWaitingForInput": True,
+                "inputMode": "line",
+                "expectedType": expected_type
+            }))
+        except Exception as e:
+            if "close message" not in str(e).lower() and "closed" not in str(e).lower():
+                print(f"Input request error: {e}")
+            raise Exception("Connection closed")
         
-    def c_input(self):
-        asyncio.run_coroutine_threadsafe(
-            self.ws.send_text(json.dumps({
+        # Wait for response (use thread to avoid blocking event loop)
+        try:
+            def get_from_queue():
+                return self.input_q.get(timeout=300)  # 5 minute timeout
+            
+            val = await asyncio.to_thread(get_from_queue)
+            if isinstance(val, Exception):
+                raise val
+            
+            # Validate and cast based on type
+            val_str = str(val).strip()
+            
+            if expected_type == "kai":
+                # Integer type
+                try:
+                    if len(val_str.lstrip('-')) > 15:
+                        raise ValueError("Integer too large")
+                    result = int(val_str)
+                except ValueError:
+                    raise RuntimeError(f"Runtime Error: Invalid input '{val_str}' for type kai (integer)")
+            elif expected_type == "flux":
+                # Float type
+                try:
+                    parts = val_str.lstrip('-').split('.')
+                    if len(parts[0]) > 15 or (len(parts) == 2 and len(parts[1]) > 8) or len(parts) > 2:
+                        raise ValueError("Float too large")
+                    result = float(val_str)
+                except ValueError:
+                    raise RuntimeError(f"Runtime Error: Invalid input '{val_str}' for type flux (float)")
+            elif expected_type == "lani":
+                # Boolean type
+                if val_str.lower() not in ['iris', 'sage', 'true', 'false']:
+                    raise RuntimeError(f"Runtime Error: Invalid input '{val_str}' for type lani (boolean)")
+                result = val_str.lower() in ['iris', 'true']
+            else:
+                result = val_str
+            
+            # Echo to output buffer
+            self.output_buffer += val_str + "\n"
+            try:
+                await self.ws.send_text(json.dumps({
+                    "output": self.output_buffer,
+                    "isWaitingForInput": False
+                }))
+            except Exception as e:
+                if "close message" not in str(e).lower() and "closed" not in str(e).lower():
+                    print(f"Echo error: {e}")
+            
+            return result
+        except queue.Empty:
+            raise RuntimeError("Runtime Error: Input timeout")
+    
+    async def getch(self) -> str:
+        """Async callback for character input (spark)"""
+        # Send request for char input
+        try:
+            await self.ws.send_text(json.dumps({
                 "output": self.output_buffer,
                 "isWaitingForInput": True,
-                "inputMode": "line"  # Explicitly tell the frontend this is a line
-            })),
-            self.loop
-        )
-        val = self.input_q.get()
-        if isinstance(val, Exception):
-            raise val 
+                "inputMode": "char"
+            }))
+        except Exception as e:
+            if "close message" not in str(e).lower() and "closed" not in str(e).lower():
+                print(f"Char input request error: {e}")
+            raise Exception("Connection closed")
+        
+        # Wait for response (use thread to avoid blocking event loop)
+        try:
+            def get_from_queue():
+                return self.input_q.get(timeout=300)
             
-        self.output_buffer += str(val) + "\n"
-        asyncio.run_coroutine_threadsafe(
-            self.ws.send_text(json.dumps({
-                "output": self.output_buffer,
-                "isWaitingForInput": False
-            })),
-            self.loop
-        )
-        return val
-
-    # --- NEW METHOD FOR spark() ---
-    def c_getch(self):
-        asyncio.run_coroutine_threadsafe(
-            self.ws.send_text(json.dumps({
-                "output": self.output_buffer,
-                "isWaitingForInput": True,
-                "inputMode": "char"  # Tell the frontend to intercept a single keystroke!
-            })),
-            self.loop
-        )
-        val = self.input_q.get()
-        if isinstance(val, Exception):
-            raise val 
+            val = await asyncio.to_thread(get_from_queue)
+            if isinstance(val, Exception):
+                raise val
             
-        # Echo the character back to the console without a newline
-        self.output_buffer += str(val)
-        asyncio.run_coroutine_threadsafe(
-            self.ws.send_text(json.dumps({
-                "output": self.output_buffer,
-                "isWaitingForInput": False
-            })),
-            self.loop
-        )
-        return val
+            val_str = str(val)[:1]  # Just first character
+            
+            # Echo to output buffer (no newline)
+            self.output_buffer += val_str
+            try:
+                await self.ws.send_text(json.dumps({
+                    "output": self.output_buffer,
+                    "isWaitingForInput": False
+                }))
+            except Exception as e:
+                if "close message" not in str(e).lower() and "closed" not in str(e).lower():
+                    print(f"Echo error: {e}")
+            
+            return val_str
+        except queue.Empty:
+            raise RuntimeError("Runtime Error: Character input timeout")
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -316,7 +369,7 @@ async def websocket_endpoint(websocket: WebSocket):
             async def progress_callback(msg: str):
                 await websocket.send_text(msg)
 
-            tokens, errors, parse_tree, parser_err, warnings, transpiled_code = await asyncio.to_thread(
+            tokens, errors, parse_tree, parser_err, warnings, tac_code = await asyncio.to_thread(
                 run_pipeline, code, progress_callback
             )
 
@@ -332,7 +385,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 "errors": errors,
                 "warnings": warnings, 
                 "parseTree": parse_tree,
-                "transpiledCode": transpiled_code,
+                "transpiledCode": tac_code,  # Send TAC code instead of Python
                 "output": "",
                 "isWaitingForInput": False,
                 "compilationProgress": {
@@ -351,40 +404,45 @@ async def websocket_endpoint(websocket: WebSocket):
                     break # Safely exit the loop if the client already left
                 raise e
 
-            # Run Execution Phase using the Python transpiled code
-            if not errors and transpiled_code:
+            # Run Execution Phase using the TAC interpreter
+            if not errors and tac_code:
                 active_input_q = queue.Queue()
                 env = ExecutionEnv(websocket, loop, active_input_q)
                 
-                def run_code(q, environment, t_code):
+                async def run_tac_code(tac: str, environment: ExecutionEnv, q: queue.Queue):
                     try:
-                        custom_globals = builtins.__dict__.copy()
-                        custom_globals["print"] = environment.c_print
-                        custom_globals["input"] = environment.c_input
+                        interpreter = TACInterpreter(
+                            tac,
+                            input_callback=environment.input,
+                            output_callback=environment.output,
+                            getch_callback=environment.getch
+                        )
+                        await interpreter.run()
                         
-                        # Map the transpiler's __soluna_getch to our new method
-                        custom_globals["__soluna_getch"] = environment.c_getch
-                        
-                        exec(t_code, custom_globals)
-                        
+                        # Send final output
+                        await websocket.send_text(json.dumps({
+                            "output": environment.output_buffer,
+                            "isWaitingForInput": False
+                        }))
                     except Exception as e:
+                        err_msg = str(e)
                         if str(e) != "ABORT_EXECUTION":
-                            err_msg = str(e)
                             if "Runtime Error" not in err_msg:
                                 err_msg = f"Runtime Error: {err_msg}"
-                                
+                            
                             prefix = "" if environment.output_buffer.endswith("\n") else "\n"
                             environment.output_buffer += f"{prefix}{err_msg}"
                             
-                            asyncio.run_coroutine_threadsafe(
-                                websocket.send_text(json.dumps({
+                            try:
+                                await websocket.send_text(json.dumps({
                                     "output": environment.output_buffer,
                                     "isWaitingForInput": False
-                                })),
-                                loop
-                            )
-                        
-                asyncio.create_task(asyncio.to_thread(run_code, active_input_q, env, transpiled_code))
+                                }))
+                            except Exception as send_err:
+                                if "close message" not in str(send_err).lower() and "closed" not in str(send_err).lower():
+                                    print(f"Error sending output: {send_err}")
+                
+                asyncio.create_task(run_tac_code(tac_code, env, active_input_q))
 
     except WebSocketDisconnect:
         if active_input_q:

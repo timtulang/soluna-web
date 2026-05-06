@@ -360,7 +360,10 @@ class TACGenerator:
         if ident_node and init_node:
             var_name = ident_node["value"]
             self.symbol_table[var_name] = data_type
-            val_temp = self.visit(init_node)
+            val_temp = self.visit(init_node).strip()
+            # Strip leading "=" if present (from AST structure)
+            if val_temp.startswith("="):
+                val_temp = val_temp[1:].strip()
             self.emit(f"{var_name} = {val_temp}")
         return ""
 
