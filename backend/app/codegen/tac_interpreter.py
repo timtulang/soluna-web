@@ -565,16 +565,55 @@ class TACInterpreter:
     def _cast_value(self, value: Any, expected_type: str) -> Any:
         """Mimics _cast_lumina from the Python transpiler to enforce types."""
         try:
-            # ---> FIXED: Allow both Arrays and Objects to pass through freely
+            # Allow both Arrays and Objects to pass through freely
             if expected_type.startswith('hubble_'):
                 if not isinstance(value, (list, SolunaList, dict, SolunaObject)):
                     raise ValueError(f"Expected array or object, got {type(value)}")
                 return value
+            
+            # Separate String Input from Internal Math
+            if isinstance(value, str):
+                val_str = value.strip()
+                # Reject forced scientific notation explicitly for numerical string inputs
+                if expected_type in ['kai', 'flux'] and ('e' in val_str.lower()):
+                    raise RuntimeError(f"Runtime Error: Invalid input for '{expected_type}'.")
+            
+            elif isinstance(value, float):
+                # Force internal math floats out of scientific notation to check limits properly
+                val_str = f"{value:.15f}".rstrip('0').rstrip('.')
+                if not val_str or val_str == '-0': 
+                    val_str = '0'
+            else:
+                val_str = str(value).strip()
+                
+            clean_str = val_str.lstrip('-')
                 
             if expected_type == 'kai':
+                parts = clean_str.split('.')
+                
+                # STRICT LIMIT: Enforce 15 whole digits
+                if len(parts[0]) > 15:
+                    raise RuntimeError("Runtime Error: Integer 'kai' exceeds 15 whole digit limit.")
+                
+                # TRUNCATE: Convert to float first (to handle decimal strings), then truncate to int
                 return int(float(value)) if isinstance(value, str) else int(value)
-            elif expected_type in ['flux']: 
-                return float(value)
+            
+            elif expected_type == 'flux': 
+                parts = clean_str.split('.')
+                
+                # STRICT LIMIT: 15 whole digits
+                if len(parts[0]) > 15:
+                    raise RuntimeError("Runtime Error: Float 'flux' exceeds 15 whole digit limit.")
+                    
+                # TRUNCATE fractional part
+                if len(parts) > 1 and len(parts[1]) > 8:
+                    frac_part = parts[1][:8]
+                    is_neg = val_str.startswith('-')
+                    truncated_str = f"{'-' if is_neg else ''}{parts[0]}.{frac_part}"
+                    return float(truncated_str)
+                    
+                return float(val_str)
+            
             elif expected_type == 'lani':
                 if isinstance(value, str):
                     return value.lower() in ['iris', 'true']
@@ -584,12 +623,44 @@ class TACInterpreter:
             elif expected_type == 'blaze':
                 s = str(value)
                 if len(s) != 1:
-                    raise ValueError("Char must be length 1")
+                    raise ValueError("Char must be of length 1")
                 return s
         except (ValueError, TypeError):
             raise RuntimeError(f"Runtime Error: Cannot cast '{value}' to type {expected_type}")
         
         return value
+    
+    def _format_output(self, val: Any) -> str:
+        """Format numbers to restrict limits and truncate decimals."""
+        if isinstance(val, float):
+            # Prevent scientific notation from bypassing output length checks
+            str_val = f"{val:.15f}".rstrip('0').rstrip('.')
+            if not str_val or str_val == '-0': 
+                str_val = '0'
+            
+            is_neg = str_val.startswith('-')
+            parts = str_val.lstrip('-').split('.')
+            whole_part = parts[0]
+            
+            # Throw runtime error if float whole digits are too big
+            if len(whole_part) > 15:
+                raise RuntimeError("Runtime Error: Float 'flux' output exceeds 15 whole digits limit.")
+                
+            if len(parts) > 1:
+                frac_part = parts[1][:8]  # Strictly truncate fractional parts
+                formatted = f"{whole_part}.{frac_part}".rstrip('0').rstrip('.')
+                return f"-{formatted}" if is_neg and formatted != "0" else formatted
+                
+            return f"-{whole_part}" if is_neg and whole_part != "0" else whole_part
+            
+        elif isinstance(val, int) and not isinstance(val, bool):
+            # Throw runtime error if integer is too big
+            val_str = str(abs(val))
+            if len(val_str) > 15:
+                raise RuntimeError("Runtime Error: Integer 'kai' output exceeds 15 whole digits limit.")
+            return str(val)
+            
+        return str(val)
     
     def _process_escapes(self, text: str) -> str:
         """Process standard string escape sequences."""

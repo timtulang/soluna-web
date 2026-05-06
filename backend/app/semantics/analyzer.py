@@ -1559,8 +1559,25 @@ class SemanticAnalyzer:
         # Handle literal tokens and variable references
         if node_type == "TOKEN":
             tt = node.get("token_type")
-            if tt == 'integer': types.add('kai')
-            elif tt == 'float': types.add('flux')
+            # Limit kai to 15 whole digits
+            if tt == 'integer':
+                val_str = str(node.get("value", "")).lstrip("-")
+                
+                if len(val_str) > 15:
+                    raise SemanticError(f"Integer literal '{node.get('value')}' is too large. Max 15 digits allowed.", node.get("line"), node.get("col"))
+                
+                types.add('kai')
+            # Limit flux to 15 whole digits and 8 fractional part digits
+            elif tt == 'float':
+                val_str = str(node.get("value", "")).lstrip('-')
+                parts = val_str.split('.')
+                
+                if len(parts[0]) > 15:
+                    raise SemanticError("Float 'flux' exceeds 15 whole digits limit.", node.get('line'), node.get('col'))
+                if len(parts) > 1 and len(parts[1]) > 8:
+                    raise SemanticError("Float 'flux' exceeds 8 fractional digits limit.", node.get('line'), node.get('col'))
+                types.add('flux')
+                
             elif tt == 'string': types.add('selene')
             elif tt == 'char': types.add('blaze')
             elif tt in ['iris', 'sage']: types.add('lani')  # true/false
