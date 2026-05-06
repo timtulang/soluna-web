@@ -18,6 +18,10 @@ from app.semantics.analyzer import SemanticAnalyzer
 from app.semantics.errors import SemanticError
 from app.codegen.tacgen import TACGenerator
 from app.codegen.tac_interpreter import TACInterpreter
+from app.codegen.transpiler import PythonTranspiler
+
+# Switch between 'tac' and 'python'
+ACTIVE_GENERATOR = "tac"
 
 app = FastAPI()
 
@@ -191,11 +195,16 @@ def run_pipeline(code: str, progress_callback=None):
                         loop.run_until_complete(send_progress("semantic", 70, f"Found {len(warnings)} warnings"))
                         
                         # ===== STAGE 4: CODE GENERATION (80-100%) =====
-                        loop.run_until_complete(send_progress("codegen", 80, "Generating TAC (Three-Address Code)..."))
-                        tac_gen = TACGenerator()
-                        tac_code = tac_gen.generate(parse_tree)
+                        loop.run_until_complete(send_progress("codegen", 80, f"Generating {ACTIVE_GENERATOR.upper()} code..."))
                         
-                        loop.run_until_complete(send_progress("codegen", 100, "TAC generation complete"))
+                        if ACTIVE_GENERATOR == "tac":
+                            generator = TACGenerator()
+                        else:
+                            generator = PythonTranspiler()
+                            
+                        tac_code = generator.generate(parse_tree)  # 'tac_code' now holds either TAC or Python
+                        
+                        loop.run_until_complete(send_progress("codegen", 100, "Code generation complete"))
                         
                     except SemanticError as se:
                         lexer_errors.append({
@@ -405,44 +414,54 @@ async def websocket_endpoint(websocket: WebSocket):
                 raise e
 
             # Run Execution Phase using the TAC interpreter
+            # Run Execution Phase using the TAC interpreter
             if not errors and tac_code:
-                active_input_q = queue.Queue()
-                env = ExecutionEnv(websocket, loop, active_input_q)
-                
-                async def run_tac_code(tac: str, environment: ExecutionEnv, q: queue.Queue):
-                    try:
-                        interpreter = TACInterpreter(
-                            tac,
-                            input_callback=environment.input,
-                            output_callback=environment.output,
-                            getch_callback=environment.getch
-                        )
-                        await interpreter.run()
-                        
-                        # Send final output
-                        await websocket.send_text(json.dumps({
-                            "output": environment.output_buffer,
-                            "isWaitingForInput": False
-                        }))
-                    except Exception as e:
-                        err_msg = str(e)
-                        if str(e) != "ABORT_EXECUTION":
-                            if "Runtime Error" not in err_msg:
-                                err_msg = f"Runtime Error: {err_msg}"
+                if ACTIVE_GENERATOR == "tac":
+                    active_input_q = queue.Queue()
+                    env = ExecutionEnv(websocket, loop, active_input_q)
+                    
+                    async def run_tac_code(tac: str, environment: ExecutionEnv, q: queue.Queue):
+                        try:
+                            interpreter = TACInterpreter(
+                                tac,
+                                input_callback=environment.input,
+                                output_callback=environment.output,
+                                getch_callback=environment.getch
+                            )
+                            await interpreter.run()
                             
-                            prefix = "" if environment.output_buffer.endswith("\n") else "\n"
-                            environment.output_buffer += f"{prefix}{err_msg}"
-                            
-                            try:
-                                await websocket.send_text(json.dumps({
-                                    "output": environment.output_buffer,
-                                    "isWaitingForInput": False
-                                }))
-                            except Exception as send_err:
-                                if "close message" not in str(send_err).lower() and "closed" not in str(send_err).lower():
-                                    print(f"Error sending output: {send_err}")
-                
-                asyncio.create_task(run_tac_code(tac_code, env, active_input_q))
+                            # Send final output
+                            await websocket.send_text(json.dumps({
+                                "output": environment.output_buffer,
+                                "isWaitingForInput": False
+                            }))
+                        except Exception as e:
+                            # ... (keep existing exception handling)
+                            err_msg = str(e)
+                            if str(e) != "ABORT_EXECUTION":
+                                if "Runtime Error" not in err_msg:
+                                    err_msg = f"Runtime Error: {err_msg}"
+                                
+                                prefix = "" if environment.output_buffer.endswith("\n") else "\n"
+                                environment.output_buffer += f"{prefix}{err_msg}"
+                                
+                                try:
+                                    await websocket.send_text(json.dumps({
+                                        "output": environment.output_buffer,
+                                        "isWaitingForInput": False
+                                    }))
+                                except Exception as send_err:
+                                    if "close message" not in str(send_err).lower() and "closed" not in str(send_err).lower():
+                                        print(f"Error sending output: {send_err}")
+                    
+                    asyncio.create_task(run_tac_code(tac_code, env, active_input_q))
+                else:
+                    # If using Python Transpiler, just send a notice to the output 
+                    # (Unless you plan to wire up Python `exec()` here later)
+                    await websocket.send_text(json.dumps({
+                        "output": "Code generated via Python Transpiler. (Execution is currently disabled for Python).",
+                        "isWaitingForInput": False
+                    }))
 
     except WebSocketDisconnect:
         if active_input_q:
