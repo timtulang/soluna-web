@@ -212,6 +212,10 @@ class TACInterpreter:
             result = await self.input_callback('let') if self.input_callback else input()
             if result_var:
                 self._set_value(result_var, result)
+        elif func_name == 'getch':
+            result = await self.getch_callback() if self.getch_callback else input()
+            if result_var:
+                self._set_value(result_var, result)
         else:
             # User-defined function
             if func_name in self.functions:
@@ -366,141 +370,68 @@ class TACInterpreter:
         return self._eval_expr(expr)
     
     def _eval_expr(self, expr: str) -> Any:
-        """Evaluate an expression to a value."""
         expr = expr.strip()
-        
-        # Handle empty expressions
-        if not expr:
-            return ""
-        
+        if not expr: return ""
         while expr.startswith('(') and expr.endswith(')'):
             expr = expr[1:-1].strip()
-
+        
+        # 1. Unary '#' Operator (Length)
         if expr.startswith('#'):
             var_name = expr[1:].strip()
             var = self._get_value(var_name)
             if isinstance(var, (list, SolunaList, str)):
                 return len(var)
             return 0
+        
+        # ---> CRITICAL FIX: Restore 'newarray' initialization
+        if expr == 'newarray':
+            return SolunaList()
+            
+        # 2. Literals (True/False/Strings)
+        if expr in ['True', 'iris']: return True
+        if expr in ['False', 'sage']: return False
 
-        # Handle literals FIRST - before trying to split on operators
-        if expr == 'True':
-            return True
-        if expr == 'False':
-            return False
-        if expr == 'iris':
-            return True
-        if expr == 'sage':
-            return False
-        
-        # Try to parse as number
-        try:
-            if '.' in expr and expr.count('.') == 1 and not expr.startswith('"'):
-                return float(expr)
-            if not expr.startswith('"') and not expr.startswith("'"):
-                return int(expr)
-        except ValueError:
-            pass
-        
-        # Handle string literals (must be before operator splitting!)
+
         if expr.startswith('"') and expr.endswith('"') and len(expr) > 1:
             return self._process_escapes(expr[1:-1])
             
         if expr.startswith("'") and expr.endswith("'") and len(expr) > 1:
             return self._process_escapes(expr[1:-1])
-        
-        # Handle array literals: newarray
-        if expr == 'newarray':
-            return SolunaList()
-        
-        # Handle array access: arr[idx]
+        # 3. Unary NOT and Negation
+        if expr.startswith('NOT '): ...
+        if expr.startswith('-') and len(expr) > 1 and expr[1] not in '><!=': ...
+
+        # ---> 4. BINARY OPERATIONS MUST BE HERE <---
+        for op in [' OR ', ' AND ', ' == ', ' != ', ' <= ', ' >= ', ' < ', ' > ', 
+                   ' CONCAT ', ' + ', ' - ', ' ** ', ' * ', ' // ', ' / ', ' % ', ' POW ']:
+            if op in expr:
+                idx = self._find_op_outside_blocks(expr, op)
+                if idx != -1:
+                    left = self._eval_expr(expr[:idx].strip())
+                    right = self._eval_expr(expr[idx + len(op):].strip())
+                    return self._apply_operator(op.strip(), left, right)
+
+        # ---> 5. ARRAY ACCESS MUST BE AT THE VERY BOTTOM <---
         if '[' in expr and ']' in expr:
             match = re.match(r'^(\w+)\[(.*)\]$', expr)
             if match:
                 arr_name = match.group(1)
                 idx_str = match.group(2)
-                
                 try:
                     idx = int(idx_str)
                 except ValueError:
                     idx = int(self._eval_expr(idx_str))
                 
                 arr = self._get_value(arr_name)
-                
-                # ---> CRITICAL FIX: Match the -1 offset used in assignment
                 actual_idx = idx - 1
                 
                 if isinstance(arr, (list, SolunaList)):
                     return arr[actual_idx] if 0 <= actual_idx < len(arr) else 0
                 elif isinstance(arr, str):
                     return arr[actual_idx] if 0 <= actual_idx < len(arr) else ""
-                
                 return 0
         
-        # Handle function calls: len(var)
-        if expr.startswith('len(') and expr.endswith(')'):
-            var_name = expr[4:-1].strip()
-            var = self._get_value(var_name)
-            if isinstance(var, (list, str)):
-                return len(var)
-            return 0
-        
-        # Handle unary operations BEFORE binary operations
-        if expr.startswith('NOT '):
-            val = self._eval_expr(expr[4:].strip())
-            return not self._is_truthy(val)
-        
-        if expr.startswith('-') and len(expr) > 1 and expr[1] not in '><!=':
-            # Check if this is a negative number literal
-            try:
-                val = float(expr) if '.' in expr else int(expr)
-                return val
-            except ValueError:
-                # It's a negation operator
-                val = self._eval_expr(expr[1:].strip())
-                try:
-                    return -val
-                except:
-                    return val
-        
-        # Handle binary operations: a op b
-        # Order matters! Check from lowest precedence to highest
-        # But only if not inside a string literal
-        for op in [' OR ', ' AND ', ' == ', ' != ', ' <= ', ' >= ', ' < ', ' > ', 
-                   ' CONCAT ', ' + ', ' - ', ' ** ', ' * ', ' // ', ' / ', ' % ', ' POW ']:
-            # Find operator not inside string literals
-            pos = 0
-            in_string = False
-            string_char = None
-            while pos < len(expr):
-                char = expr[pos]
-                if char in '"\'':
-                    if not in_string:
-                        in_string = True
-                        string_char = char
-                    elif char == string_char and (pos == 0 or expr[pos-1] != '\\'):
-                        in_string = False
-                pos += 1
-            
-            # Simple split (not inside string) - look for operator
-            if op in expr and not (expr.startswith('"') and expr.endswith('"')):
-                # Check if operator is outside of strings
-                idx = expr.find(op)
-                if idx > 0:
-                    # Make sure we're not inside a string literal
-                    before = expr[:idx]
-                    after = expr[idx+len(op):]
-                    
-                    # Quick check: count quotes before this position
-                    quote_count_before = before.count('"') + before.count("'")
-                    if quote_count_before % 2 == 0:  # Even number of quotes = outside string
-                        parts = [before, after]
-                        if len(parts) == 2:
-                            left = self._eval_expr(parts[0].strip())
-                            right = self._eval_expr(parts[1].strip())
-                            return self._apply_operator(op.strip(), left, right)
-        
-        # Variable or temporary lookup
+        # 6. Fallback Variable Lookup
         return self._get_value(expr)
     
     def _apply_operator(self, op: str, left: Any, right: Any) -> Any:
@@ -632,3 +563,48 @@ class TACInterpreter:
         text = text.replace('\x00', '\\')
         
         return text
+    
+    def _find_op_outside_blocks(self, expr: str, op: str) -> int:
+        """Finds operator ignoring those inside strings, parens, or brackets."""
+        in_string = False
+        string_char = None
+        bracket_depth = 0
+        paren_depth = 0
+        
+        for i in range(len(expr) - len(op) + 1):
+            char = expr[i]
+            if char in '"\'':
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char:
+                    in_string = False
+            
+            if not in_string:
+                if char == '[': bracket_depth += 1
+                elif char == ']': bracket_depth -= 1
+                elif char == '(': paren_depth += 1
+                elif char == ')': paren_depth -= 1
+            
+            # Match operator only if we are at base depth
+            if not in_string and bracket_depth == 0 and paren_depth == 0 and expr[i:i+len(op)] == op:
+                return i
+        return -1
+    
+    def _find_op_outside_strings(self, expr: str, op: str) -> int:
+        """Finds the index of an operator only if it's not inside quotes."""
+        in_string = False
+        string_char = None
+        
+        for i in range(len(expr) - len(op) + 1):
+            char = expr[i]
+            if char in '"\'':
+                if not in_string:
+                    in_string = True
+                    string_char = char
+                elif char == string_char:
+                    in_string = False
+            
+            if not in_string and expr[i:i+len(op)] == op:
+                return i
+        return -1

@@ -514,9 +514,13 @@ class TACGenerator:
             self.emit(f"{temp} = call input, 0")
             return temp
             
-        # If it's a simple value, generic_visit will find the token and return it
-        val = self.generic_visit(node)
-        return val
+        # ---> CRITICAL FIX: Intercept spark()
+        if self._has_token(node, "spark"):
+            temp = self.new_temp()
+            self.emit(f"{temp} = call getch, 0")
+            return temp
+            
+        return self.generic_visit(node)
 
     # --- Control Flow ---
 
@@ -742,7 +746,9 @@ class TACGenerator:
         
         # Evaluate condition
         cond_temp = self.new_temp()
-        self.emit(f"{cond_temp} = {var_name} < {limit_val}")
+
+        op = ">" if step_val.startswith("-") else "<"
+        self.emit(f"{cond_temp} = {var_name} {op} {limit_val}")
         self.emit(f"ifFalse {cond_temp} goto {l_end}")
         
         # Push loop exit for break (warp) statements
