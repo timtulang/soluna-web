@@ -1313,28 +1313,25 @@ class TACGenerator:
     
     def visit_string_or_table_len(self, node):
         """
-        Handle len() function: returns length of string or table.
+        Handle length operator: returns length of string or table (using their identifiers).
         
         TAC representation:
-            temp = len(array_or_string)
+            temp = #array_or_string
         
         Returns a temporary variable holding the length, which can then be
         used in expressions or assignments.
         
         Example Soluna code:
-            kai length = len("hello");
-            kai arr_size = len(numbers);
+            kai arr_size = #numbers;
         
         TAC output:
-            t0 = len("hello")
-            length = t0
-            t1 = len(numbers)
-            arr_size = t1
+            t0 = #numbers
+            arr_size = t0
         """
         ident = self._find_token(node, "identifier")
         if ident:
             temp = self.new_temp()
-            self.emit(f"{temp} = len({ident['value']})")
+            self.emit(f"{temp} = #{ident['value']}")
             return temp
         return ""
 

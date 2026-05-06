@@ -333,6 +333,25 @@ class SemanticAnalyzer:
                 if not self.symbols.lookup(var_name):
                     raise SemanticError(f"Object '{var_name}' not declared.", line, col)
                 return # Skip strict checking for dynamic object properties
+            
+            # ---> FIX: Handle array indexing captured by standard assignment
+            if tail_node and self._find_child(tail_node, "table_index"):
+                symbol = self.symbols.lookup(var_name)
+                if not symbol:
+                    raise SemanticError(f"Variable '{var_name}' not declared.", line, col)
+                    
+                assign_val = self._find_child(node, "assignment_value")
+                if assign_val:
+                    val_wrapper = self._find_child(assign_val, "value")
+                    if val_wrapper and not (self._has_token(val_wrapper, "lumina") or self._has_token(val_wrapper, "spark")):
+                        val_node = self._find_child(val_wrapper, "expression")
+                        if val_node:
+                            expr_type = self._get_expression_type(val_node)
+                            elem_type = symbol.get("element_type", "unknown")
+                            # Check against the ELEMENT type, not the core type (hubble)
+                            if not self._check_coercion(elem_type, expr_type, val_node):
+                                raise SemanticError(f"Type Mismatch: Cannot assign '{expr_type}' to table of '{elem_type}'.", line, col)
+                return # Exits so it doesn't run the standard assignment checks below
 
             # Look up the variable in symbol table
             symbol = self.symbols.lookup(var_name)
