@@ -11,51 +11,13 @@ class PythonTranspiler:
         self.code.append(f"{indent}{line}")
 
     def generate(self, tree):
-        preamble = [
-            "class __SolunaList(list):",
-            "    def __setitem__(self, key, value):",
-            "        if key >= len(self):",
-            "            self.extend([0] * (key - len(self) + 1))",
-            "        super().__setitem__(key, value)",
-            "    def __getitem__(self, key):",
-            "        if key >= len(self):",
-            "            self.extend([0] * (key - len(self) + 1))",
-            "        return super().__getitem__(key)",
-            "",
-            "def __soluna_input(expected_type):",
-            "    val = input().strip()",
-            "    try:",
-            "        if expected_type == 'kai':",
-            "            if len(val.lstrip('-')) > 15:",
-            "                raise ValueError",
-            "            return int(val)",
-            "        if expected_type == 'flux':",
-            "            parts = val.lstrip('-').split('.')",
-            "            if len(parts[0]) > 15 or (len(parts) == 2 and len(parts[1]) > 8) or len(parts) > 2:",
-            "                raise ValueError",
-            "            return float(val)",
-            "        if expected_type == 'lani':",
-            "            if val not in ['iris', 'sage']:",
-            "                raise ValueError",
-            "            return val == 'iris'",
-            "        return val",
-            "    except ValueError:",
-            "        raise RuntimeError(f\"Runtime Error: Invalid input '{val}' for type {expected_type}\")",
-            "",
-            "def __soluna_index(idx):",
-            "    if idx < 1:",
-            "        raise RuntimeError(f\"Runtime Error: list index out of range\")",
-            "    return idx",
-            "",
-            "def __soluna_set(arr, idx, val):",
-            "    actual_idx = __soluna_index(idx) - 1",
-            "    arr[actual_idx] = val",
-            "",
-        ]
-        self.code = preamble + self.code
+        # The preamble is no longer needed! 
+        # All of these functions are now injected directly into the execution 
+        # namespace by main.py, making the generated code much cleaner.
+        self.code = []
         self.visit(tree)
         return "\n".join(self.code)
-
+    
     def visit(self, node):
         if not node: return ""
         if isinstance(node, dict) and node.get("type") == "TOKEN":
@@ -78,6 +40,8 @@ class PythonTranspiler:
 
     def _cast_lumina(self, var_name, base_val):
         """Cast values based on variable type"""
+        import re
+        
         # Handle input() calls
         if base_val == "input()":
             var_type = self.symbol_table.get(var_name, "let")
@@ -88,12 +52,17 @@ class PythonTranspiler:
         
         # Cast to int for kai (integer) types
         if var_type == "kai":
-            # Wrap the value in int() to truncate floats
-            return f"int({base_val})"
+            # First, wrap string literals in int() conversions
+            # This handles cases like: 1 + "10" -> 1 + int("10")
+            converted = re.sub(r'"([^"]*)"', r'int("\1")', base_val)
+            # Wrap the whole expression in int() to handle type mismatches
+            return f"int({converted})"
         
         # Cast to float for flux/selene (float) types
         if var_type == "flux":
-            return f"float({base_val})"
+            # First, wrap string literals in float() conversions
+            converted = re.sub(r'"([^"]*)"', r'float("\1")', base_val)
+            return f"float({converted})"
         
         # Otherwise return as-is
         return base_val

@@ -19,9 +19,10 @@ from app.semantics.errors import SemanticError
 from app.codegen.tacgen import TACGenerator
 from app.codegen.tac_interpreter import TACInterpreter
 from app.codegen.transpiler import PythonTranspiler
+from app.codegen.python_runtime import SolunaList, soluna_index, soluna_set
 
 # Switch between 'tac' and 'python'
-ACTIVE_GENERATOR = "tac"
+ACTIVE_GENERATOR = "python"
 
 app = FastAPI()
 
@@ -463,12 +464,113 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     asyncio.create_task(run_tac_code(tac_code, env, active_input_q))
                 else:
-                    # If using Python Transpiler, just send a notice to the output 
-                    # (Unless you plan to wire up Python `exec()` here later)
-                    await websocket.send_text(json.dumps({
-                        "output": "Code generated via Python Transpiler. (Execution is currently disabled for Python).",
-                        "isWaitingForInput": False
-                    }))
+                    # Execute Python Transpiler output
+                    active_input_q = queue.Queue()
+                    env = ExecutionEnv(websocket, loop, active_input_q)
+                    
+                    async def run_python_code(python_code: str, environment: ExecutionEnv, q: queue.Queue):
+                        try:
+                            # 1. Custom thread-safe print function
+                            def soluna_print_sync(*args, sep=' ', end='\n'):
+                                text = sep.join(map(str, args)) + end
+                                environment.output_buffer += text
+                                # Safely push the WebSocket message to the main event loop
+                                asyncio.run_coroutine_threadsafe(
+                                    environment.ws.send_text(json.dumps({
+                                        "output": environment.output_buffer
+                                    })),
+                                    loop
+                                )
+
+                            # 2. Custom thread-safe input function
+                            def soluna_input_sync(expected_type="let"):
+                                # Request input from the frontend
+                                asyncio.run_coroutine_threadsafe(
+                                    environment.ws.send_text(json.dumps({
+                                        "output": environment.output_buffer,
+                                        "isWaitingForInput": True,
+                                        "inputMode": "line",
+                                        "expectedType": expected_type
+                                    })),
+                                    loop
+                                )
+                                
+                                # Block THIS thread (not the main loop) waiting for user input
+                                try:
+                                    val = q.get(timeout=300)
+                                    if isinstance(val, Exception):
+                                        raise val
+                                        
+                                    val_str = str(val).strip()
+                                    
+                                    # Basic type coercion based on Soluna's types
+                                    if expected_type == "kai":
+                                        result = int(val_str)
+                                    elif expected_type == "flux":
+                                        result = float(val_str)
+                                    elif expected_type == "lani":
+                                        result = val_str.lower() in ['iris', 'true', 'sage']
+                                    else:
+                                        result = val_str
+                                        
+                                    environment.output_buffer += val_str + "\n"
+                                    
+                                    # Tell frontend we are no longer waiting
+                                    asyncio.run_coroutine_threadsafe(
+                                        environment.ws.send_text(json.dumps({
+                                            "output": environment.output_buffer,
+                                            "isWaitingForInput": False
+                                        })),
+                                        loop
+                                    )
+                                    return result
+                                    
+                                except ValueError:
+                                    raise RuntimeError(f"Runtime Error: Invalid input '{val_str}' for type {expected_type}")
+                                except queue.Empty:
+                                    raise RuntimeError("Runtime Error: Input timeout")
+
+                            # 3. Create execution namespace with our injected functions
+                            namespace = {
+                                '__SolunaList': SolunaList,
+                                '__soluna_input': soluna_input_sync,
+                                '__soluna_index': soluna_index,
+                                '__soluna_set': soluna_set,
+                                'print': soluna_print_sync, # Overrides standard print!
+                                '__builtins__': builtins,
+                            }
+                            
+                            # 4. Run exec() in a background thread to prevent deadlocking FastAPI
+                            def execute():
+                                exec(python_code, namespace)
+                                
+                            await asyncio.to_thread(execute)
+                            
+                            # Send final execution state
+                            await websocket.send_text(json.dumps({
+                                "output": environment.output_buffer,
+                                "isWaitingForInput": False
+                            }))
+                            
+                        except Exception as e:
+                            err_msg = str(e)
+                            if err_msg != "ABORT_EXECUTION":
+                                if "Runtime Error" not in err_msg:
+                                    err_msg = f"Runtime Error: {err_msg}"
+                                
+                                prefix = "" if environment.output_buffer.endswith("\n") else "\n"
+                                environment.output_buffer += f"{prefix}{err_msg}"
+                                
+                                try:
+                                    await websocket.send_text(json.dumps({
+                                        "output": environment.output_buffer,
+                                        "isWaitingForInput": False
+                                    }))
+                                except Exception as send_err:
+                                    if "close message" not in str(send_err).lower() and "closed" not in str(send_err).lower():
+                                        print(f"Error sending output: {send_err}")
+                    
+                    asyncio.create_task(run_python_code(tac_code, env, active_input_q))
 
     except WebSocketDisconnect:
         if active_input_q:
